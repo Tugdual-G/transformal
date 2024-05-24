@@ -1,0 +1,15 @@
+*.py[cod]
+__pycache__
+.venv
+*.stl
+*.FCStd
+spinningtop.ply
+bell.ply
+fusion.ply
+ovoid.ply
+*.egg
+build
+*.pdf
+bellmesh.py
+matplotmesh.py
+meshplotlib.py
