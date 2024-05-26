@@ -44,9 +44,10 @@ def create_R(trimesh, rho):
         vertex_ordered = np.array(nx.cycle_basis(graph)[0][::-1], dtype=np.int16)
         for j in vertex_ordered:
             for k in range(4):
-                B[i*4+k,j*4+k] = 1/3.0
+                B[i*4+k,j*4+k] = 1.0/3
 
-    return P@B
+    return P @ B
+
 
 def create_Mf(trimesh):
     nf = trimesh.faces.shape[0]
@@ -56,6 +57,7 @@ def create_Mf(trimesh):
         for k in range(4):
             Mf[i*4+k,i*4+k] = area
     return Mf
+
 
 def create_Mv(trimesh):
     nv = trimesh.vertices.shape[0]
@@ -135,7 +137,6 @@ def new_edges_divergence(trimesh, lambd):
             A = np.sum(np.linalg.norm(np.cross(edges_vect[:-1],edges_vect[1:]), axis=1))
 
             for j in range(nv):
-                # TODO maybe use old angles since conformal ?
                 e1 = edges_vect[(j-1)%nv]
                 # e1 /= np.linalg.norm(e1)
                 o1 =  edges_vect[j]-e1
@@ -165,6 +166,7 @@ def new_edges_divergence(trimesh, lambd):
                 e_new += 1/6 * mul_quatern(lambdc[i*4:i*4+4], mul_quatern(eij, lambd[vj*4:vj*4+4]))
                 e_new += 1/6 * mul_quatern(lambdc[vj*4:vj*4+4], mul_quatern(eij, lambd[i*4:i*4+4]))
                 e_new += 1/3 * mul_quatern(lambdc[vj*4:vj*4+4], mul_quatern(eij, lambd[vj*4:vj*4+4]))
+                # print(np.linalg.norm(e_new-eij))
 
                 div[4*i+1:4*i+4] -= e_new[1:]*(cot2+cot1)
             # div[4*i+1:4*i+4] /= 2*A
@@ -218,8 +220,8 @@ def quaternionic_laplacian_matrix(trimesh):
 
                 j = one_ordered[i][0][k]
                 for l in range(4):
-                    L[4*i+l,4*j+l] = -(cot2+cot1)
-                    L[4*i+l,4*i+l] += (cot2+cot1)
+                    L[4*i+l,4*j+l] = (cot2+cot1)#/(2*a)
+                    L[4*i+l,4*i+l] -= (cot2+cot1)#/(2*a)
 
             for l in range(4):
                 A[4*i+l,4*i+l] = 2*a
@@ -233,7 +235,7 @@ if __name__=="__main__":
     from scipy.linalg import solve, issymmetric
 
 
-    trimesh = trimesh.load('sphereHQ.ply')
+    trimesh = trimesh.load('knobitle.ply')
 
     L, Area = quaternionic_laplacian_matrix(trimesh)
 
@@ -248,7 +250,7 @@ if __name__=="__main__":
     k = np.linalg.norm(kN, axis=1)
     face_k = k[trimesh.faces]
     face_k = np.mean(face_k, axis=1)
-    rho = -0.0*face_k
+    rho = -0.01*face_k
 
     D = create_dirac_op(trimesh)
     R = create_R(trimesh, rho)
@@ -260,16 +262,26 @@ if __name__=="__main__":
         Mv_inv[i,i] = 1/Mv_inv[i,i]
 
     Mf = create_Mf(trimesh)
-    A_str = Mv_inv @ A.T @ Mf
 
-    eigvals, eigvecs = eigh(A_str @ A, Mv, eigvals_only=False, subset_by_index=[0,0])
-    lambd = eigvecs[:,0]#*200
+    V = Mv.copy()
+    for i in range(Mv.shape[0]):
+        V[i,i] = 1/np.sqrt(V[i,i])
+
+    AV_str = Mv_inv @ (A @ V).T @ Mf
+
+    eigvals, eigvecs = eigh(AV_str @ (A @ V), eigvals_only=False, subset_by_index=[0,0])
+    lambd = V @ eigvecs[:,0]
+    lambd.shape = (nv, 4)
+    lambd /= np.mean(np.linalg.norm(lambd,axis=1))
+    print(lambd)
+    lambd.shape = (nv*4, )
 
     div_e = new_edges_divergence(trimesh, lambd)
 
 
 
-    new_vertices = solve(L, div_e, assume_a='sym')
+    print(f"{issymmetric(L) = }")
+    new_vertices = solve(L, div_e,assume_a='sym')
     residual = (L@new_vertices - div_e)
     print(f"{np.linalg.norm(residual)=}")
     new_vertices.shape = (nv,4)
