@@ -3,13 +3,13 @@ __pycache__
 .venv
 *.stl
 *.FCStd
-spinningtop.ply
-bell.ply
-fusion.ply
-ovoid.ply
 *.egg
 build
 *.pdf
+*.ply
+!sphere.ply
+!knobitle.ply
+meshes
 bellmesh.py
 matplotmesh.py
 meshplotlib.py

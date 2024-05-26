@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from matplotlib.pyplot import axis
 import numpy as np
 import trimesh
 import networkx as nx
@@ -6,7 +7,6 @@ import networkx as nx
 def create_dirac_op(trimesh):
     faces_edges_idx = trimesh.faces_unique_edges
     edges = trimesh.edges_unique[faces_edges_idx]
-    # D = np.zeros((trimesh.faces.shape[0],trimesh.vertices.shape[0], 3))
     D_block = np.zeros((trimesh.faces.shape[0]*4,trimesh.vertices.shape[0]*4))
     # block = np.zeros((4,4))
 
@@ -14,11 +14,10 @@ def create_dirac_op(trimesh):
         graph = nx.from_edgelist(edges[i])
         vertex_ordered = np.array(nx.cycle_basis(graph)[0][::-1], dtype=np.int16)
         v = trimesh.vertices[vertex_ordered]
-        area_x2 = np.linalg.norm(np.cross(v[1]-v[0],v[2]-v[1]))
+        area_x2 = abs(np.linalg.norm(np.cross(v[1]-v[0],v[2]-v[1])))
         for j in range(3):
             e_j = v[(j+2)%3]-v[(j+1)%3]
             Dij = -(e_j)/area_x2
-            # D[i,vertex_ordered[j],:] = Dij
             block = np.array([[0, -Dij[0], -Dij[1], -Dij[2]],
                                 [Dij[0],  0, -Dij[2],  Dij[1]],
                                 [Dij[1],  Dij[2],  0, -Dij[0]],
@@ -109,27 +108,151 @@ def new_edges(trimesh, lambd):
     return edge_vects
 
 
+def new_edges_divergence(trimesh, lambd):
+    nv = trimesh.vertices.shape[0]
 
+    g = nx.from_edgelist(trimesh.edges_unique)
+    one_ring = [list(g[i].keys()) for i in range(nv)]
+    one_ordered = [nx.cycle_basis(g.subgraph(i)) for i in one_ring]
+
+    eij = np.zeros(4, dtype=np.float64)
+    lambdc = lambd.copy()
+
+    for i in range(lambd.shape[0]//4):
+        lambdc[4*i+1:4*i+4] *= -1
+
+    div = np.zeros((nv*4))
+    for i in range(nv):
+        if len(one_ordered[i]) >0:
+            ring_vert = trimesh.vertices[one_ordered[i][0]]
+
+            # edges connecting the point to itś neighbours
+            edges_vect = ring_vert-trimesh.vertices[i,:]
+
+            nv = ring_vert.shape[0]
+
+            # area of the ring
+            A = np.sum(np.linalg.norm(np.cross(edges_vect[:-1],edges_vect[1:]), axis=1))
+
+            for j in range(nv):
+                # TODO maybe use old angles since conformal ?
+                e1 = edges_vect[(j-1)%nv]
+                # e1 /= np.linalg.norm(e1)
+                o1 =  edges_vect[j]-e1
+                # o1 /= np.linalg.norm(o1)
+                cos1 = np.dot(e1,o1)
+                sin1 = np.linalg.norm(np.cross(o1,e1))
+                if sin1 != 0.0 :
+                    cot1 = cos1/sin1
+                else :
+                    cot1 = 0
+
+                e2 = edges_vect[(j+1)%nv]
+                # e2 /= np.linalg.norm(e2)
+                o2 =  edges_vect[j]-e2
+                # o2 /= np.linalg.norm(o2)
+                cos2 = np.dot(e2,o2)
+                sin2 = np.linalg.norm(np.cross(e2,o2))
+
+                if sin2 != 0.0 :
+                    cot2 = cos2/sin2
+                else :
+                    cot2 = 0
+
+                vj = one_ordered[i][0][j]
+                eij[1:] = edges_vect[j]
+                e_new  = 1/3 * mul_quatern(lambdc[i*4:i*4+4], mul_quatern(eij, lambd[i*4:i*4+4]))
+                e_new += 1/6 * mul_quatern(lambdc[i*4:i*4+4], mul_quatern(eij, lambd[vj*4:vj*4+4]))
+                e_new += 1/6 * mul_quatern(lambdc[vj*4:vj*4+4], mul_quatern(eij, lambd[i*4:i*4+4]))
+                e_new += 1/3 * mul_quatern(lambdc[vj*4:vj*4+4], mul_quatern(eij, lambd[vj*4:vj*4+4]))
+
+                div[4*i+1:4*i+4] -= e_new[1:]*(cot2+cot1)
+            # div[4*i+1:4*i+4] /= 2*A
+    return div
+
+
+def quaternionic_laplacian_matrix(trimesh):
+    nv = trimesh.vertices.shape[0]
+    g = nx.from_edgelist(trimesh.edges_unique)
+    one_ring = [list(g[i].keys()) for i in range(nv)]
+    one_ordered = [nx.cycle_basis(g.subgraph(i)) for i in one_ring]
+
+    L = np.zeros((nv*4,nv*4))
+    # area matrix
+    A = np.zeros((nv*4, nv*4))
+
+    for i in range(nv):
+        if len(one_ordered[i]) >0:
+            ring_vert = trimesh.vertices[one_ordered[i][0]]
+
+            # edges connecting the point to itś neighbours
+            edges_vect = ring_vert-trimesh.vertices[i,:]
+
+            # area of the ring
+            a = np.sum(np.linalg.norm(np.cross(edges_vect[:-1],edges_vect[1:]), axis=1))
+
+            nv = ring_vert.shape[0]
+            for k in range(nv):
+                e1 = edges_vect[(k-1)%nv].copy()
+                # e1 /= np.linalg.norm(e1)
+                o1 = ring_vert[k]-ring_vert[(k-1)%nv]
+                # o1 /= np.linalg.norm(o1)
+                cos1 = np.dot(e1,o1)
+                sin1 = np.linalg.norm(np.cross(o1,e1))
+                if sin1 != 0.0 :
+                    cot1 = cos1/sin1
+                else :
+                    cot1 = 0
+
+                e2 = edges_vect[(k+1)%nv].copy()
+                # e2 /= np.linalg.norm(e2)
+                o2 = ring_vert[k] - ring_vert[(k+1)%nv]
+                # o2 /= np.linalg.norm(o2)
+                cos2 = np.dot(e2,o2)
+                sin2 = np.linalg.norm(np.cross(e2,o2))
+
+                if sin2 != 0.0 :
+                    cot2 = cos2/sin2
+                else :
+                    cot2 = 0
+
+                j = one_ordered[i][0][k]
+                for l in range(4):
+                    L[4*i+l,4*j+l] = -(cot2+cot1)
+                    L[4*i+l,4*i+l] += (cot2+cot1)
+
+            for l in range(4):
+                A[4*i+l,4*i+l] = 2*a
+    return L, A
 
 if __name__=="__main__":
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import art3d
     from trimesh_curvature import mean_curvature
     from scipy.linalg import eigh
+    from scipy.linalg import solve, issymmetric
 
 
-    trimesh = trimesh.load('knobitle.ply')
+    trimesh = trimesh.load('sphereHQ.ply')
 
+    L, Area = quaternionic_laplacian_matrix(trimesh)
+
+
+    Ainv = Area.copy()
+    for i in range(Area.shape[0]):
+        if Ainv[i,i] != 0:
+            Ainv[i,i] =  1/Ainv[i,i]
+
+    nv = trimesh.vertices.shape[0]
     kN = mean_curvature(trimesh)
     k = np.linalg.norm(kN, axis=1)
     face_k = k[trimesh.faces]
     face_k = np.mean(face_k, axis=1)
-    rho = -0.1*face_k
+    rho = -0.0*face_k
 
     D = create_dirac_op(trimesh)
     R = create_R(trimesh, rho)
-    print(f"{D.shape=}")
-    print(f"{R.shape=}")
+
     A = D - R
     Mv = create_Mv(trimesh)
     Mv_inv = Mv.copy()
@@ -137,27 +260,68 @@ if __name__=="__main__":
         Mv_inv[i,i] = 1/Mv_inv[i,i]
 
     Mf = create_Mf(trimesh)
-    print(f"{Mf.shape=}")
-    print(f"{Mv.shape=}")
-    print(f"{A.shape=}")
     A_str = Mv_inv @ A.T @ Mf
 
     eigvals, eigvecs = eigh(A_str @ A, Mv, eigvals_only=False, subset_by_index=[0,0])
-    lambd = eigvecs[:,0]
+    lambd = eigvecs[:,0]#*200
 
-    edges_new = new_edges(trimesh, lambd)
+    div_e = new_edges_divergence(trimesh, lambd)
 
 
-    quit()
 
+    new_vertices = solve(L, div_e, assume_a='sym')
+    residual = (L@new_vertices - div_e)
+    print(f"{np.linalg.norm(residual)=}")
+    new_vertices.shape = (nv,4)
+
+    trimesh.vertices[:,:] = new_vertices[:,1:]
+
+
+    # vertices = np.zeros(nv*4)
+    # vertices[1::4] = trimesh.vertices[:,0]
+    # vertices[2::4] = trimesh.vertices[:,1]
+    # vertices[3::4] = trimesh.vertices[:,2]
+
+    # vertices.shape = (nv*4,1)
+    # L, A = quaternionic_laplacian_matrix(trimesh)
+    # plt.spy(L)
+    # plt.show()
+    # Ainv = A.copy()
+    # for i in range(A.shape[0]):
+    #     if Ainv[i,i] != 0:
+    #         Ainv[i,i] =  1/Ainv[i,i]
+
+    # kN = Ainv @ L @ vertices
+    # kN.shape = (nv,4)
+    # kN = kN[:,1:]
+
+
+
+    kN = mean_curvature(trimesh)
+    vertex_normals = trimesh.vertex_normals
+    k = np.sum(kN*vertex_normals, axis=1)
+    face_k = k[trimesh.faces]
+    face_k = np.mean(face_k, axis=1)
+    k_norm = (face_k-face_k.min())/np.ptp(face_k)
+    cm = plt.cm.plasma(k_norm)
 
     fig = plt.figure()
     ax = fig.add_subplot(projection="3d")
-    triangles = trimesh.vertices[trimesh.faces]
-    pc = art3d.Poly3DCollection(triangles, facecolors='g',shade=True, edgecolors=(1,1,1,0.2))
-    ax.add_collection(pc)
-    ax.set_xlim(-90, 90)
-    ax.set_ylim(-90, 90)
-    ax.set_zlim(-90, 90)
 
+    # for i in range(kN.shape[0]):
+    #     normalsegm = np.stack((trimesh.vertices[i],trimesh.vertices[i,:]-20*kN[i]/np.linalg.norm(kN[i])))
+    #     ax.plot(normalsegm[:,0],normalsegm[:,1],normalsegm[:,2],'b')
+
+    triangles = trimesh.vertices[trimesh.faces]
+    pc = art3d.Poly3DCollection(triangles, facecolors=cm,shade=True, edgecolors=(1,1,1,0.2), alpha=0.9)
+    ax.add_collection(pc)
+
+    xlim = trimesh.vertices[:,0].min(), trimesh.vertices[:,0].max()
+    ylim = trimesh.vertices[:,1].min(), trimesh.vertices[:,1].max()
+    zlim = trimesh.vertices[:,2].min(), trimesh.vertices[:,2].max()
+
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+    ax.set_zlim(*zlim)
+    ax.set_box_aspect([1,1,1])
     plt.show()

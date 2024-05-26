@@ -89,6 +89,7 @@ def mean_curvature(trimesh):
             # kN[i] *= np.mean(np.linalg.norm(edges_vect,axis=1))
     return kN
 
+
 if __name__=="__main__":
 
     import matplotlib.pyplot as plt
