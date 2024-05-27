@@ -5,7 +5,7 @@ import trimesh
 import networkx as nx
 from scipy.sparse.linalg import spsolve, norm, inv
 from scipy.sparse import csc_array
-from scipy.linalg import issymmetric, eigh, solve, expm_cond
+from scipy.linalg import issymmetric, eig, eigh, solve, expm_cond
 
 def create_dirac_op(trimesh):
     faces_edges_idx = trimesh.faces_unique_edges
@@ -274,18 +274,23 @@ def transform(rho, trimesh):
 
     AV_str = Mv_inv @ (A @ V).T @ Mf
 
-    eigvals, eigvecs = eigh(AV_str @ (A @ V), eigvals_only=False, subset_by_index=[0,0])
-    lambd = V @ eigvecs[:,1]
-    print(eigvals)
+    D_Matrix = AV_str @ (A @ V)
+    print(D_Matrix[:4,:4])
+    print(f"{issymmetric(D_Matrix) = }")
+    eigvals, eigvecs = eig(D_Matrix)
+    first_eigvec = np.real(eigvecs[:,np.argmin(np.real(eigvals))])
+
+    # eigvals, eigvecs = eig(D_Matrix, eigvals_only=False, subset_by_index=[0,0])
+    lambd = V @ first_eigvec
     lambd.shape = (nv, 4)
-    lambd /= np.mean(np.linalg.norm(lambd,axis=1))
+    lambd /= np.mean(np.linalg.norm(lambd, axis=1))
     # lambd[:,1:] = 0
     # lambd[:,0] = 1
     lambd.shape = (nv*4, )
 
     div_e = new_edges_divergence(trimesh, lambd)
-    div_e[1:4] += L[0,0]*vertices[0]
-    L[0:4,0:4] = 0
+    # div_e[1:4] += L[0,0]*vertices[0]
+    # L[0:4,0:4] = 0
 
     print(f"{issymmetric(L) = }")
     L = csc_array(L)
@@ -321,7 +326,7 @@ if __name__=="__main__":
     face_center = np.mean(triangles, axis=1)
 
     dist = np.linalg.norm(face_center-vertices[-1],axis=1)
-    rho = +0.001*np.exp(-dist**2/900)
+    rho = 0.03*np.exp(-dist**2/1000)
 
     transform(rho, trimesh)
 
