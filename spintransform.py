@@ -7,7 +7,7 @@ from scipy.sparse.linalg import spsolve, norm, inv
 from scipy.sparse import csc_array
 from scipy.linalg import issymmetric, eig, eigh, solve, expm_cond
 
-def create_dirac_op(trimesh):
+def create_dirac_op_fv(trimesh):
     faces_edges_idx = trimesh.faces_unique_edges
     edges = trimesh.edges_unique[faces_edges_idx]
     D_block = np.zeros((trimesh.faces.shape[0]*4,trimesh.vertices.shape[0]*4))
@@ -37,6 +37,50 @@ def create_dirac_op(trimesh):
 
             D_block[i*4:i*4+4,vertex_ordered_idx[j]*4:vertex_ordered_idx[j]*4+4] = block
     return D_block
+
+def create_dirac_op_vv(trimesh, rho):
+    vertices = trimesh.vertices
+    nv = vertices.shape[0]
+    faces_edges_idx = trimesh.faces_unique_edges
+    edges = trimesh.edges_unique[faces_edges_idx]
+    D_block = np.zeros((nv*4,nv*4))
+    e_i = np.zeros(4)
+    e_j = np.zeros(4)
+    assert rho.shape[0] == nv
+    block_ij = np.zeros((4,4))
+
+    # for each triangle
+    for f_i in range(faces_edges_idx.shape[0]):
+        # Get the ordered vertices list of each triangle
+        graph = nx.from_edgelist(edges[f_i])
+        vertex_ordered_idx = np.array(nx.cycle_basis(graph)[0], dtype=np.int16)
+        f_v = trimesh.vertices[vertex_ordered_idx]
+
+        vertex_normal = trimesh.face_normals[f_i]
+        order_normal = np.cross(f_v[1]-f_v[0], f_v[2]-f_v[0])
+        sign = np.dot(vertex_normal, order_normal)
+        sign = int(np.sign(sign))
+        vertex_ordered_idx = vertex_ordered_idx[::sign]
+        f_v = f_v[::sign,:]
+        #
+        area_x2 = np.linalg.norm(np.cross(f_v[1]-f_v[0],f_v[2]-f_v[1]))
+        for t_i in range(3):
+            e_i[1:] = f_v[(t_i+2)%3]-f_v[(t_i+1)%3]
+            i = vertex_ordered_idx[t_i]
+            for t_j in [(t_i+1)%3,(t_i+2)%3]:
+            # for t_j in range(3):
+                j = vertex_ordered_idx[t_j]
+                e_j[1:] = f_v[(t_j+2)%3]-f_v[(t_j+1)%3]
+                X_ij = - mul_quatern(e_i, e_j)/(2*area_x2) + (rho[i]*e_j-rho[j]*e_i)/6.0
+                X_ij[0] +=  rho[i]*rho[j]*area_x2/18.0
+                block_ij[:,:] = ([[X_ij[0], -X_ij[1], -X_ij[2], -X_ij[3]],
+                                  [X_ij[1],  X_ij[0], -X_ij[3],  X_ij[2]],
+                                  [X_ij[2],  X_ij[3],  X_ij[0], -X_ij[1]],
+                                  [X_ij[3], -X_ij[2],  X_ij[1],  X_ij[0]]])
+
+                D_block[i*4:i*4+4,j*4:j*4+4] += block_ij
+    return D_block
+
 
 def create_R(trimesh, rho):
     nf = trimesh.faces.shape[0]
@@ -123,7 +167,6 @@ def new_edges_divergence(trimesh, lambd):
 
             # area of the ring
             # A = np.sum(np.linalg.norm(np.cross(edges_vect[:-1],edges_vect[1:]), axis=1))
-
             for k in range(nv):
                 e1 = -edges_vect[(k-1)%nv]
                 # e1 /= np.linalg.norm(e1)
@@ -245,7 +288,7 @@ def quaternionic_laplacian_matrix(trimesh):
                 A[4*i+l,4*i+l] = 2*a_x2
     return L, A
 
-def transform(rho, trimesh):
+def transform(trimesh, rho):
     L, Area = quaternionic_laplacian_matrix(trimesh)
 
     # Ainv = Area.copy()
@@ -256,32 +299,38 @@ def transform(rho, trimesh):
     vertices = trimesh.vertices
     nv = vertices.shape[0]
 
-    D = create_dirac_op(trimesh)
-    R = create_R(trimesh, rho)
+    # D = create_dirac_op(trimesh)
+    # R = create_R(trimesh, rho)
 
-    A = D - R
-    Mv = create_Mv(trimesh)
-    Mv_inv = Mv.copy()
-    for i in range(Mv.shape[0]):
-        Mv_inv[i,i] = 1/Mv_inv[i,i]
+    # A = D - R
+    # Mv = create_Mv(trimesh)
+    # Mv_inv = Mv.copy()
+    # for i in range(Mv.shape[0]):
+    #     Mv_inv[i,i] = 1/Mv_inv[i,i]
 
-    Mf = create_Mf(trimesh)
+    # Mf = create_Mf(trimesh)
 
-    V = Mv.copy()
-    for i in range(Mv.shape[0]):
-        V[i,i] = 1/np.sqrt(V[i,i])
-    V /= np.mean(V)
+    # V = Mv.copy()
+    # for i in range(Mv.shape[0]):
+    #     V[i,i] = 1/np.sqrt(V[i,i])
+    # V /= np.mean(V)
 
-    AV_str = Mv_inv @ (A @ V).T @ Mf
+    # AV_str = Mv_inv @ (A @ V).T @ Mf
 
-    D_Matrix = AV_str @ (A @ V)
-    print(D_Matrix[:4,:4])
-    print(f"{issymmetric(D_Matrix) = }")
-    eigvals, eigvecs = eig(D_Matrix)
-    first_eigvec = np.real(eigvecs[:,np.argmin(np.real(eigvals))])
+    # D_Matrix = AV_str @ (A @ V)
+    # print(D_Matrix[:4,:4])
+    # print(f"{issymmetric(D_Matrix) = }")
+    # eigvals, eigvecs = eig(D_Matrix)
+    # first_eigvec = np.real(eigvecs[:,np.argmin(np.real(eigvals))])
+    X = create_dirac_op_vv(trimesh, rho)
+    print(f"{issymmetric(X) = }")
+    # eigvals, eigvecs = eigh(X, subset_by_index=[0,5])
+    eigvals, eigvecs = eigh(X,driver='ev')
+    # lambd = eigvecs[:,np.argmin(eigvals)]
+    lambd = eigvecs[:,0]
 
     # eigvals, eigvecs = eig(D_Matrix, eigvals_only=False, subset_by_index=[0,0])
-    lambd = V @ first_eigvec
+    # lambd = V @ first_eigvec
     lambd.shape = (nv, 4)
     lambd /= np.mean(np.linalg.norm(lambd, axis=1))
     # lambd[:,1:] = 0
@@ -302,8 +351,8 @@ def transform(rho, trimesh):
 
     new_vertices = spsolve(L, div_e)
     # new_vertices = solve(L, div_e, assume_a='sym')
-    residual = (L@new_vertices - div_e)
-    print(f"{np.linalg.norm(residual)=}")
+    # residual = (L@new_vertices - div_e)
+    # print(f"{np.linalg.norm(residual)=}")
     new_vertices.shape = (nv,4)
 
     vertices[:,:] = new_vertices[:,1:]
@@ -318,19 +367,24 @@ if __name__=="__main__":
             ax.plot(normalsegm[0,0],normalsegm[0,1],normalsegm[0,2],color+'o')
             ax.plot(normalsegm[:,0],normalsegm[:,1],normalsegm[:,2],color)
 
+    def vertex2face(trimesh, vval):
+        assert vval.shape[0] == trimesh.vertices.shape[0]
+        return np.mean(vval[trimesh.faces], axis=1)
+
     trimesh = trimesh.load('sphere.ply')
 
     vertices = trimesh.vertices
-    nv = vertices.shape[0]
-    triangles = vertices[trimesh.faces]
-    face_center = np.mean(triangles, axis=1)
+    # nv = vertices.shape[0]
+    # triangles = vertices[trimesh.faces]
+    # face_center = np.mean(triangles, axis=1)
 
-    dist = np.linalg.norm(face_center-vertices[-1],axis=1)
-    rho = 0.03*np.exp(-dist**2/1000)
+    dist = np.linalg.norm(vertices-vertices[-1],axis=1)
+    rho = -0.01*np.exp(-dist**2/1000)
 
-    transform(rho, trimesh)
+    transform(trimesh, rho)
 
-    rho_norm = (rho-rho.min())/np.ptp(rho)
+    rho_fc = vertex2face(trimesh, rho)
+    rho_norm = (rho_fc-rho_fc.min())/np.ptp(rho_fc)
     cm = plt.cm.plasma(rho_norm)
 
     fig = plt.figure()
