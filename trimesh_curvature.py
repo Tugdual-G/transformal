@@ -44,17 +44,22 @@ def trans(axis, theta, v, a=1):
 
 
 def mean_curvature(trimesh):
+
+    vertices = trimesh.vertices
+    nv = vertices.shape[0]
     g = nx.from_edgelist(trimesh.edges_unique)
-    one_ring = [list(g[i].keys()) for i in range(len(trimesh.vertices))]
+    one_ring = [list(g[i].keys()) for i in range(len(vertices))]
     one_ordered = [nx.cycle_basis(g.subgraph(i)) for i in one_ring]
 
-    kN = np.zeros_like(trimesh.vertices)
-    for i in range(len(one_ordered)):
+
+    kN = np.zeros_like(vertices)
+    for i in range(nv):
         if len(one_ordered[i]) >0:
-            ring_vert = trimesh.vertices[one_ordered[i][0]]
+
+            ring_vert = vertices[one_ordered[i][0]]
 
             # edges connecting the point to itś neighbours
-            edges_vect = ring_vert-trimesh.vertices[i,:]
+            edges_vect = ring_vert-vertices[i,:]
 
             # area of the ring
             A = np.sum(np.linalg.norm(np.cross(edges_vect[:-1],edges_vect[1:]), axis=1))
@@ -86,7 +91,6 @@ def mean_curvature(trimesh):
 
                 kN[i] -= edges_vect[j]*(cot2+cot1)
             kN[i] /= 2*A
-            # kN[i] *= np.mean(np.linalg.norm(edges_vect,axis=1))
     return kN
 
 
@@ -96,30 +100,50 @@ if __name__=="__main__":
     from matplotlib.tri import Triangulation
     from mpl_toolkits.mplot3d import Axes3D, art3d
 
-    trimesh = trimesh.load('spinningtop.ply')
+    def plot_normals(ax,vertices, normals,length=10, color="r"):
+        for i in range(normals.shape[0]):
+            normalsegm = np.stack((vertices[i],vertices[i,:]+length*normals[i]))
+            ax.plot(normalsegm[0,0],normalsegm[0,1],normalsegm[0,2],color+'o')
+            ax.plot(normalsegm[:,0],normalsegm[:,1],normalsegm[:,2],color)
+
+    def vertex2face(trimesh, vval):
+        assert vval.shape[0] == trimesh.vertices.shape[0]
+        return np.mean(vval[trimesh.faces], axis=1)
+
+    trimesh = trimesh.load('knobitle.ply')
+    vertices = trimesh.vertices
     kN = mean_curvature(trimesh)
-    k = np.linalg.norm(kN, axis=1)
-    face_k = k[trimesh.faces[:,0]]+ k[trimesh.faces[:,1]]+ k[trimesh.faces[:,2]]
-    face_k /= 3
-    face_k_norm = (face_k-face_k.min())/np.ptp(face_k)
+    normals = trimesh.vertex_normals
+    k = np.sum(normals*kN,axis=1)
+    print(f"{ k.min() =} , { k.max() = }")
+
+    face_k_norm = vertex2face(trimesh, k)
+    face_k_norm = (face_k_norm - face_k_norm.min())/(np.ptp(face_k_norm))
     start = 0.15
     face_k_norm = start+(1-start-0.001)*face_k_norm
     cm = plt.cm.inferno(face_k_norm)
 
 
-    triangles = trimesh.vertices[trimesh.faces]
+    triangles = vertices[trimesh.faces]
     fig = plt.figure()
     ax = fig.add_subplot(projection="3d")
-    pc = art3d.Poly3DCollection(triangles, facecolors=cm, alpha=1, shade=True, edgecolors=(1,1,1,0.2))
 
+
+    pc = art3d.Poly3DCollection(triangles, facecolors=cm, alpha=1, shade=True, edgecolors=(1,1,1,0.2))
     ax.add_collection(pc)
 
-    # for i in range(kN.shape[0]):
-    #     normalsegm = np.stack((trimesh.vertices[i],trimesh.vertices[i,:]-20*kN[i]/np.linalg.norm(kN[i])))
-    #     ax.plot(normalsegm[:,0],normalsegm[:,1],normalsegm[:,2],'b')
+    plot_normals(ax, vertices, kN, 1000)
 
-    ax.set_xlim(-90, 90)
-    ax.set_ylim(-90, 90)
-    ax.set_zlim(-90, 90)
+    xlim = vertices[:,0].min(), vertices[:,0].max()
+    ylim = vertices[:,1].min(), vertices[:,1].max()
+    zlim = vertices[:,2].min(), vertices[:,2].max()
+
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+    ax.set_zlim(*zlim)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
+    ax.set_box_aspect([1,1,1])
 
     plt.show()
