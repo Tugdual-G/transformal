@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-# from matplotlib.pyplot import axis
-from matplotlib.pyplot import tight_layout
 import numpy as np
 import trimesh
 import networkx as nx
 from scipy.sparse.linalg import spsolve, norm, eigsh, inv
-from scipy.sparse import csc_array
+from scipy.sparse import csc_array, csr_array
 from scipy.linalg import issymmetric, solve, expm_cond, eigh
 from trimesh_curvature import scalar_curvature, mean_curvature
 
@@ -95,7 +93,6 @@ def new_edges_divergence(trimesh, lambd):
             # one_ordered[i][0] = one_ordered[i][0][::sign]
 
             ring_nv = ring_vert.shape[0]
-
             for k in range(ring_nv):
                 e1 = -edges_vect[(k-1)%ring_nv]
                 o1 =  edges_vect[k]+e1
@@ -134,11 +131,17 @@ def quaternionic_laplacian_matrix(trimesh):
     g = nx.from_edgelist(trimesh.edges_unique)
     one_ring = [list(g[i].keys()) for i in range(nv)]
     one_ordered = [nx.cycle_basis(g.subgraph(i)) for i in one_ring]
-
     L = np.zeros((nv*4,nv*4))
 
+    idx_i = np.zeros(nv*4*10)
+    idx_j = np.zeros(nv*4*10)
+    data = np.zeros(nv*4*10)
+
+    cot = 0.0
+    diag = 0.0
+    sp_k = 0
     for i in range(nv):
-        if len(one_ordered[i]) >0:
+        if len(one_ordered[i][0]) >0:
             ring_vert = trimesh.vertices[one_ordered[i][0]]
 
             # edges connecting the point to itś neighbours
@@ -152,12 +155,13 @@ def quaternionic_laplacian_matrix(trimesh):
 
             ring_nv = ring_vert.shape[0]
             # iterating over each of the edges adjacent to the vertex i
+            diag = 0.0
             for k in range(ring_nv):
                 e1 = -edges_vect[(k-1)%ring_nv]
                 o1 =  edges_vect[k]+e1
                 cos1 = np.dot(e1,o1)
                 sin1 = np.linalg.norm(np.cross(o1,e1))
-                cot1 = cos1/sin1
+                cot = cos1/sin1
 
                 e2 = -edges_vect[(k+1)%ring_nv]
                 o2 =  edges_vect[k]+e2
@@ -165,21 +169,30 @@ def quaternionic_laplacian_matrix(trimesh):
                 cos2 = np.dot(e2,o2)
                 sin2 = np.linalg.norm(np.cross(e2,o2))
 
-                cot2 = cos2/sin2
+                cot += cos2/sin2
 
                 j = one_ordered[i][0][k]
+                diag -= cot
                 for l in range(4):
-                    L[4*i+l,4*j+l] = (cot2+cot1)#/(2*a_x2)
-                    L[4*i+l,4*i+l] -= (cot2+cot1)#/(2*a_x2)
+                    idx_i[sp_k] = i * 4 + l
+                    idx_j[sp_k] = j * 4 + l
+                    data[sp_k] = cot
+                    sp_k += 1
 
-    return L
+            for l in range(4):
+                idx_i[sp_k] = i * 4 + l
+                idx_j[sp_k] = i * 4 + l
+                data[sp_k] = diag
+                sp_k += 1
+
+    return idx_i[:sp_k], idx_j[:sp_k], data[:sp_k]
 
 def eigensolve(M, v):
     nv = v.shape[0]
     v[:] = 0
     v[::4] = 1/nv
     M = M
-    for i in range(15):
+    for i in range(5):
         v[:] = spsolve(M, v)
         v.shape = (nv//4,4)
         v /= np.sqrt(np.sum(np.sum(v**2,axis=1)))
@@ -191,14 +204,34 @@ def eigensolve(M, v):
     v.shape = (nv, )
 
 
+def symetric_delete(i_del, idx_i, idx_j, data):
+    idx_sp = 0
+    gapi = 0
+    gapj = 0
+    i_new = idx_i.copy()
+    j_new = idx_j.copy()
+    data_new = data.copy()
+    for k in range(data.shape[0]):
+        if not (idx_i[k] in i_del) and not (idx_j[k] in i_del):
+            i_new = idx_i[k] - gapi
+            j_new[idx_sp] = idx_j[k]
+            data_new[idx_sp] = data[k]
+            idx_sp += 1
+
+        else :
+            gapi += 1
+
+    idx_i = idx_i[:idx_sp]
+    idx_j = idx_j[:idx_sp]
+    data = data[:idx_sp]
+    return idx_i, idx_j, data
+
+def symetric_delete2(i_del, L):
+    L_wp = np.delete(L,i_del, axis=0)
+    return np.delete(L_wp, i_del, axis=1)
+
 
 def transform(trimesh, rho):
-
-    L = quaternionic_laplacian_matrix(trimesh)
-    L = (L+L.T)/2
-
-    print(f"{issymmetric(L) = }")
-
 
     vertices = trimesh.vertices
     nv = vertices.shape[0]
@@ -213,6 +246,10 @@ def transform(trimesh, rho):
 
     div_e, constraint = new_edges_divergence(trimesh, lambd)
 
+    idxi, idxj, data = quaternionic_laplacian_matrix(trimesh)
+
+    # csc for row slicing
+    L = csc_array((data, (idxi, idxj)),shape=(nv*4,nv*4))
 
     # Applying constraint to the system
     # TODO make it work for bounded shapes
@@ -222,18 +259,25 @@ def transform(trimesh, rho):
     i_sorted = np.argsort([constraint[0][0],constraint[1][0]])
     i1 = constraint[i_sorted[0]][0]
     i2 = constraint[i_sorted[1]][0]
-    i2_del = [i2*4+i for i in range(4)]
-    i1_del = [i1*4+i for i in range(4)]
-    # Order matters
-    div_wp = np.delete(div_e, i2_del, axis=0)
-    div_wp = np.delete(div_wp, i1_del, axis=0)
-    L_wp = np.delete(L,i2_del, axis=0)
-    L_wp = np.delete(L_wp, i2_del, axis=1)
-    L_wp = np.delete(L_wp,i1_del, axis=0)
-    L_wp = np.delete(L_wp, i1_del, axis=1)
 
-    print(f"{issymmetric(L) = }")
-    L = csc_array(L_wp)
+    i1_del = [i1*4+i for i in range(4)]
+    i2_del = [i2*4+i for i in range(4)]
+    i_del = i1_del + i2_del
+
+    idxi, idxj, data = symetric_delete(i_del, idxi, idxj, data)
+
+    L2 = symetric_delete2(i_del, L.todense())
+    # csr
+    L = csc_array((data, (idxi, idxj)),shape=((nv-2)*4,(nv-2)*4))
+    # L = (L + L.T)/2
+
+    print("difffffff",np.abs(L-L2).max())
+    quit()
+
+    # # Order matters
+    div_wp = np.delete(div_e, i1_del+i2_del, axis=0)
+
+    # print(f"{issymmetric(L) = }")
 
     norm_L = norm(L)
     inv_L = inv(L)
@@ -285,6 +329,7 @@ if __name__=="__main__":
 
     rho = 10*np.exp(-dist1**2/200)*abs(mk)
     rho += 10*np.exp(-dist2**2/100)*abs(mk)
+
 
 
     rho_fc = vertex2face(trimesh, rho)
