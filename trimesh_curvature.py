@@ -67,32 +67,23 @@ def mean_curvature(trimesh):
             nv = ring_vert.shape[0]
             for j in range(nv):
                 e1 = edges_vect[(j-1)%nv].copy()
-                # e1 /= np.linalg.norm(e1)
                 o1 = ring_vert[j]-ring_vert[(j-1)%nv]
-                # o1 /= np.linalg.norm(o1)
                 cos1 = np.dot(e1,o1)
                 sin1 = np.linalg.norm(np.cross(o1,e1))
-                if sin1 != 0.0 :
-                    cot1 = cos1/sin1
-                else :
-                    cot1 = 0
+                cot1 = cos1/sin1
 
                 e2 = edges_vect[(j+1)%nv].copy()
-                # e2 /= np.linalg.norm(e2)
                 o2 = ring_vert[j] - ring_vert[(j+1)%nv]
-                # o2 /= np.linalg.norm(o2)
                 cos2 = np.dot(e2,o2)
                 sin2 = np.linalg.norm(np.cross(e2,o2))
-
-                if sin2 != 0.0 :
-                    cot2 = cos2/sin2
-                else :
-                    cot2 = 0
+                cot2 = cos2/sin2
 
                 kN[i] -= edges_vect[j]*(cot2+cot1)
             kN[i] /= 2*A
     return kN
 
+def algebric_curvature(trimesh, kN):
+    return np.sum(trimesh.vertex_normals*kN,axis=1)
 
 if __name__=="__main__":
 

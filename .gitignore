@@ -7,9 +7,6 @@ __pycache__
 build
 *.pdf
 *.ply
+try
 !sphere.ply
 !knobitle.ply
-meshes
-bellmesh.py
-matplotmesh.py
-meshplotlib.py
