@@ -341,8 +341,9 @@ if __name__=="__main__":
     rho_norm = (rho_fc-rho_fc.min())/np.ptp(rho_fc)
     cm = plt.cm.plasma(rho_norm)
 
-    fig, axs = plt.subplots(1,2,figsize=(8,4),subplot_kw=dict(projection='3d'))
-    ax1, ax2 = axs
+    transform(trimesh, rho)
+
+    fig, ax = plt.subplots(1,1,figsize=(8,4),subplot_kw=dict(projection='3d'))
 
 
     triangles = vertices[trimesh.faces]
@@ -350,44 +351,19 @@ if __name__=="__main__":
     pc = art3d.Poly3DCollection(triangles, facecolors=cm,
                                 shade=True, edgecolors=(1,1,1,0.2),
                                 alpha=1, lightsource=light)
-    ax1.add_collection(pc)
+    ax.add_collection(pc)
     # plot_normals(ax, face_center, trimesh.face_normals)
-    xlim = [(vertices[:,0].min(), vertices[:,0].max())]
-    ylim = [(vertices[:,1].min(), vertices[:,1].max())]
-    zlim = [(vertices[:,2].min(), vertices[:,2].max())]
+    xlim = (vertices[:,0].min(), vertices[:,0].max())
+    ylim = (vertices[:,1].min(), vertices[:,1].max())
+    zlim = (vertices[:,2].min(), vertices[:,2].max())
 
-    transform(trimesh, rho)
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+    ax.set_zlim(*zlim)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
+    ax.set_box_aspect([1,1,1])
 
-    kN = mean_curvature(trimesh)
-    k = scalar_curvature(trimesh, kN)
-
-    k_fc = vertex2face(trimesh, k)
-    k_norm = (k_fc-k_fc.min())/np.ptp(k_fc)
-    cm = plt.cm.plasma(k_norm)
-
-    triangles = vertices[trimesh.faces]
-    pc = art3d.Poly3DCollection(triangles, facecolors=cm,
-                                shade=True, edgecolors=(1,1,1,0.2),
-                                alpha=1, lightsource=light)
-    ax2.add_collection(pc)
-
-
-    xlim += [(vertices[:,0].min(), vertices[:,0].max())]
-    ylim += [(vertices[:,1].min(), vertices[:,1].max())]
-    zlim += [(vertices[:,2].min(), vertices[:,2].max())]
-
-    for i, ax in enumerate(axs):
-        ax.set_xlim(*xlim[i])
-        ax.set_ylim(*ylim[i])
-        ax.set_zlim(*zlim[i])
-        # ax.set_xlabel("x")
-        # ax.set_ylabel("y")
-        # ax.set_zlabel("z")
-        ax.set_box_aspect([1,1,1])
-        ax.set_axis_off()
-
-    # trimesh.visual.face_colors = cm
-    # trimesh.export("sphananaHQ.ply")
     fig.tight_layout(pad=0)
-    # fig.savefig("ballfig.png")
     plt.show()
