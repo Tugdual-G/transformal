@@ -21,7 +21,7 @@ def create_dirac_op_sparse(trimesh, rho):
     nv = vertices.shape[0]
     assert rho.shape[0] == nv
 
-    X_block = np.zeros((nv*4,nv*4), dtype=np.float64)
+    # X_block = np.zeros((nv*4,nv*4), dtype=np.float64)
     ei = np.zeros(4, dtype=np.float64)
     ej = np.zeros(4, dtype=np.float64)
     X_ii = np.zeros(4, dtype=np.float64)
@@ -29,8 +29,21 @@ def create_dirac_op_sparse(trimesh, rho):
 
     g = nx.from_edgelist(trimesh.edges_unique)
     one_ring = [list(g[i].keys()) for i in range(nv)]
+    max_n_ring = 0
+    for i in one_ring:
+        if len(i) > max_n_ring:
+            max_n_ring = len(i)
+    print(f"{max_n_ring =}")
+
     one_ordered = [nx.cycle_basis(g.subgraph(i))[0] for i in one_ring]
 
+    n_entries = nv*(max_n_ring+1)*13
+    print(f"{n_entries =}")
+    idx_i = np.zeros(n_entries, dtype=np.int_)
+    idx_j = np.zeros(n_entries, dtype=np.int_)
+    data = np.zeros(n_entries,dtype=np.float64)
+
+    sp_k = 0
     for i in range(nv):
         # TODO won't work for bounded domain
         if len(one_ordered[i]) >0:
@@ -64,6 +77,7 @@ def create_dirac_op_sparse(trimesh, rho):
 
                 ei[1:] = ring_vert[(k+1)%ring_nv] - ring_vert[k]
                 ej[1:] = vi - ring_vert[(k+1)%ring_nv]
+                # A_x2 = norm(np.array([ei[2]*ej[3]-ei[3]*ej[2],ei[3]*ej[1]-ei[1]*ej[3],ei[1]*ej[2]-ei[2]*ej[1]]))
                 A_x2 = norm(np.cross(ei[1:],ej[1:]))
                 X_ij += -mul_quatern(ei, ej)/(2*A_x2) + (rho[i]*ej-rho[j]*ei)/6.0
                 X_ij[0] +=  rho[i]*rho[j]*A_x2/18.0
@@ -74,7 +88,12 @@ def create_dirac_op_sparse(trimesh, rho):
                                   [X_ij[3], -X_ij[2],  X_ij[1],  X_ij[0]]]
 
 
-                X_block[i*4:i*4+4,j*4:j*4+4] = block_ij
+                for l in range(4):
+                    for m in range(4):
+                        idx_i[sp_k] = i*4 + l
+                        idx_j[sp_k] = j*4 + m
+                        data[sp_k] = block_ij[l,m]
+                        sp_k += 1
 
                 X_ii -= mul_quatern(ei, ei)/(2*A_x2)
                 X_ii[0] +=  rho[i]*rho[i]*A_x2/18.0
@@ -85,55 +104,15 @@ def create_dirac_op_sparse(trimesh, rho):
                                 [X_ii[3], -X_ii[2],  X_ii[1],  X_ii[0]]]
 
 
-            X_block[i*4:i*4+4,i*4:i*4+4] = block_ij
-    return X_block
+            for l in range(4):
+                for m in range(4):
+                    idx_i[sp_k] = i*4 + l
+                    idx_j[sp_k] = i*4 + m
+                    data[sp_k] = block_ij[l,m]
+                    sp_k += 1
 
-
-def create_dirac_op_vv(trimesh, rho):
-    vertices = trimesh.vertices
-    nv = vertices.shape[0]
-    faces_edges_idx = trimesh.faces_unique_edges
-    edges = trimesh.edges_unique[faces_edges_idx]
-    X_block = np.zeros((nv*4,nv*4))
-    e_i = np.zeros(4)
-    e_j = np.zeros(4)
-    assert rho.shape[0] == nv
-    block_ij = np.zeros((4,4))
-
-    # for each triangle
-    for f_i in range(faces_edges_idx.shape[0]):
-        # Get the ordered vertices list of each triangle
-        graph = nx.from_edgelist(edges[f_i])
-        vertex_ordered_idx = np.array(nx.cycle_basis(graph)[0], dtype=np.int16)
-        f_v = trimesh.vertices[vertex_ordered_idx]
-
-        vertex_normal = trimesh.face_normals[f_i]
-        order_normal = np.cross(f_v[1]-f_v[0], f_v[2]-f_v[0])
-        sign = np.dot(vertex_normal, order_normal)
-        sign = int(np.sign(sign))
-        vertex_ordered_idx = vertex_ordered_idx[::sign]
-        f_v = f_v[::sign,:]
-        #
-        area_x2 = norm(np.cross(f_v[1]-f_v[0],f_v[2]-f_v[0]))
-        for t_i in range(3):
-            e_i[1:] = f_v[(t_i+2)%3]-f_v[(t_i+1)%3]
-            i = vertex_ordered_idx[t_i]
-            # for t_j in [(t_i+1)%3,(t_i+2)%3]:
-            for t_j in range(3):
-                j = vertex_ordered_idx[t_j]
-                e_j[1:] = f_v[(t_j+2)%3]-f_v[(t_j+1)%3]
-                X_ij = - mul_quatern(e_i, e_j)/(2*area_x2) + (rho[i]*e_j-rho[j]*e_i)/6.0
-                X_ij[0] +=  rho[i]*rho[j]*area_x2/18.0
-
-                block_ij[:,:] = [[X_ij[0], -X_ij[1], -X_ij[2], -X_ij[3]],
-                                  [X_ij[1],  X_ij[0], -X_ij[3],  X_ij[2]],
-                                  [X_ij[2],  X_ij[3],  X_ij[0], -X_ij[1]],
-                                  [X_ij[3], -X_ij[2],  X_ij[1],  X_ij[0]]]
-
-                X_block[i*4:i*4+4,j*4:j*4+4] += block_ij
-    return X_block
-
-
+    print(f"{sp_k =}")
+    return idx_i[:sp_k], idx_j[:sp_k], data[:sp_k]
 
 
 def new_edges_divergence(trimesh, lambd):
@@ -314,13 +293,12 @@ def transform(trimesh, rho):
     vertices = trimesh.vertices
     nv = vertices.shape[0]
 
-    X = create_dirac_op_vv(trimesh, rho)
-    X0 = create_dirac_op_sparse(trimesh, rho)
-    print(f"{np.abs(X0-X).max()/np.mean(np.abs(X0))= }")
-    print(f"{np.abs(X0-X0.T).max() = }")
+    d_i, d_j, d_data = create_dirac_op_sparse(trimesh, rho)
+    X = sparse.csc_array((d_data,(d_i,d_j)))
+    X = (X + X.T)/2
+    print(f"{np.abs(X-X.T).max() = }")
 
 
-    X = sparse.csc_array(X0)
 
     lambd = np.zeros(4*nv)
     eigensolve(X, lambd)
@@ -388,7 +366,7 @@ if __name__=="__main__":
 
     # trimesh = trimesh.Trimesh(vertices=[[0, 0, 0], [1, 0, 0], [0, 1, 0],[0,0,1]],
     #                     faces=[[0, 1, 3],[1,2,3],[2,0,3],[0,2,1]])
-    trimesh = trimesh.load('meshes/sphereHQ.ply')
+    trimesh = trimesh.load('meshes/sphere.ply')
     print("number of vertices", trimesh.vertices.shape[0])
 
     kN = mean_curvature(trimesh)
@@ -405,8 +383,8 @@ if __name__=="__main__":
     pts += [[np.pi/4, 2*np.pi/6]]
     pts += [[-3*np.pi/4, 0]]
     pts += [[-np.pi/4, -np.pi/6]]
-    ampl = np.array([-9, -9, -9])*abs(mk)
-    rad = [100.0, 200.0, 100.0]
+    ampl = np.array([-15, -10, 18])*abs(mk)
+    rad = [100.0, 150.0, 100.0]
 
     rho = np.zeros(nv,dtype=np.float64)
     for i, pt in enumerate(pts):

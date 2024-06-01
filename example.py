@@ -34,8 +34,8 @@ pts = []
 pts += [[np.pi/4, 2*np.pi/6]]
 pts += [[-3*np.pi/4, 0]]
 pts += [[-np.pi/4, -np.pi/6]]
-ampl = np.array([-50, -20, -15])*abs(mk)
-rad = [50.0, 200.0, 100.0]
+ampl = np.array([-15, -10, 18])*abs(mk)
+rad = [100.0, 150.0, 100.0]
 
 rho = np.zeros(nv,dtype=np.float64)
 for i, pt in enumerate(pts):
