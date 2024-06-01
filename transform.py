@@ -21,7 +21,6 @@ def create_dirac_op_sparse(trimesh, rho):
     nv = vertices.shape[0]
     assert rho.shape[0] == nv
 
-    # X_block = np.zeros((nv*4,nv*4), dtype=np.float64)
     ei = np.zeros(4, dtype=np.float64)
     ej = np.zeros(4, dtype=np.float64)
     X_ii = np.zeros(4, dtype=np.float64)
@@ -29,15 +28,14 @@ def create_dirac_op_sparse(trimesh, rho):
 
     g = nx.from_edgelist(trimesh.edges_unique)
     one_ring = [list(g[i].keys()) for i in range(nv)]
-    max_n_ring = 0
+
+    n_entries = nv
     for i in one_ring:
-        if len(i) > max_n_ring:
-            max_n_ring = len(i)
-    print(f"{max_n_ring =}")
+            n_entries += len(i)
+    n_entries *= 16
 
     one_ordered = [nx.cycle_basis(g.subgraph(i))[0] for i in one_ring]
 
-    n_entries = nv*(max_n_ring+1)*13
     print(f"{n_entries =}")
     idx_i = np.zeros(n_entries, dtype=np.int_)
     idx_j = np.zeros(n_entries, dtype=np.int_)
@@ -52,15 +50,10 @@ def create_dirac_op_sparse(trimesh, rho):
             vi = vertices[i,:]
 
             vertex_normal = trimesh.vertex_normals[i]
-            #print("normal",vertex_normal)
-            #print("vertice",vi)
             ei[1:] = ring_vert[1] - ring_vert[0]
             ej[1:] = ring_vert[0] - vi
             sign = np.dot(vertex_normal,np.cross(ej[1:],ei[1:]))
             sign = int(np.sign(sign))
-            # if sign < 0:
-            #     print(i, ":",sign)
-            #print("sign",sign)
             ring_vert = ring_vert[::sign,:]
             one_ordered[i] = one_ordered[i][::sign]
 
@@ -77,7 +70,6 @@ def create_dirac_op_sparse(trimesh, rho):
 
                 ei[1:] = ring_vert[(k+1)%ring_nv] - ring_vert[k]
                 ej[1:] = vi - ring_vert[(k+1)%ring_nv]
-                # A_x2 = norm(np.array([ei[2]*ej[3]-ei[3]*ej[2],ei[3]*ej[1]-ei[1]*ej[3],ei[1]*ej[2]-ei[2]*ej[1]]))
                 A_x2 = norm(np.cross(ei[1:],ej[1:]))
                 X_ij += -mul_quatern(ei, ej)/(2*A_x2) + (rho[i]*ej-rho[j]*ei)/6.0
                 X_ij[0] +=  rho[i]*rho[j]*A_x2/18.0
@@ -112,7 +104,7 @@ def create_dirac_op_sparse(trimesh, rho):
                     sp_k += 1
 
     print(f"{sp_k =}")
-    return idx_i[:sp_k], idx_j[:sp_k], data[:sp_k]
+    return idx_i, idx_j, data
 
 
 def new_edges_divergence(trimesh, lambd):
@@ -187,9 +179,13 @@ def quaternionic_laplacian_matrix(trimesh):
     one_ordered = [nx.cycle_basis(g.subgraph(i)) for i in one_ring]
     L = np.zeros((nv*4,nv*4))
 
-    idx_i = np.zeros(nv*4*10, dtype=np.int_)
-    idx_j = np.zeros(nv*4*10, dtype=np.int_)
-    data = np.zeros(nv*4*10,dtype=np.float64)
+    n_entries = nv
+    for i in one_ring:
+            n_entries += len(i)
+    n_entries *= 16
+    idx_i = np.zeros(n_entries, dtype=np.int_)
+    idx_j = np.zeros(n_entries, dtype=np.int_)
+    data = np.zeros(n_entries,dtype=np.float64)
 
     cot = 0.0
     diag = 0.0
@@ -239,22 +235,24 @@ def quaternionic_laplacian_matrix(trimesh):
                 data[sp_k] = diag
                 sp_k += 1
 
-    return idx_i[:sp_k], idx_j[:sp_k], data[:sp_k]
+    return idx_i, idx_j, data
 
 def eigensolve(M, v):
     nv = v.shape[0]
     v[:] = 0
-    v[::4] = 1/nv
-    M = M
+    v[::4] = 1.0
+    # eigval, eigvect= sparse.linalg.eigsh(M, k=1, sigma=0, which='LM', tol=0)
+    # v = eigvect[:, 0]
     for i in range(5):
         v[:] = sparse.linalg.spsolve(M, v)
         v.shape = (nv//4,4)
-        v /= np.sqrt(np.sum(np.sum(v**2,axis=1)))
+        v /= np.sqrt(np.sum(v**2))
         v.shape = (nv, )
 
     v_res = M@v
+    print(norm(v_res)/norm(v))
     v_res.shape = (nv//4,4 )
-    v_res /= np.sqrt(np.sum(np.sum(v_res**2,axis=1)))
+    v_res /= np.sqrt(np.sum(v_res**2))
     v_res.shape = (nv, )
     print("eigen vector residual inf norm :",norm(v_res - v , ord=np.inf))
     v.shape = (nv//4,4)
