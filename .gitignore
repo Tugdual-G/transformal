@@ -11,3 +11,4 @@ try
 !sphere.ply
 !knobitle.ply
 *.so
+test.py
