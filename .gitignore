@@ -10,3 +10,4 @@ build
 try
 !sphere.ply
 !knobitle.ply
+*.so

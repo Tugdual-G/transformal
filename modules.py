@@ -165,5 +165,110 @@ def dirac_op(vertices, one_ring, rho):
     return idx_i, idx_j, data
 
 
+@cc.export(
+    "edges_div",
+    "Tuple((f8[::1],i8[::1],f8[:,::1]))(f8[:,::1], f8[::1], i8[::1])",
+)
+def edges_div(vertices, lambd, one_ring):
+    nv = vertices.shape[0]
+
+    eij = np.zeros(4, dtype=np.float64)
+    lambdc = lambd.copy()
+
+    constraint_idx = np.zeros(2, dtype=np.int_)
+    constraint_pos = np.zeros((2, 4), dtype=np.float64)
+
+    assert lambd.shape[0] % 4 == 0
+    for i in range(lambd.shape[0] // 4):
+        lambdc[4 * i + 1 : 4 * i + 4] *= -1
+
+    max_n_ring = 0
+    n_entries = nv
+    r_i0 = 0
+    len_one_r = 0
+    while r_i0 < one_ring.shape[0] and len_one_r < nv:
+        n_entries += one_ring[r_i0]
+        if one_ring[r_i0] > max_n_ring:
+            max_n_ring = one_ring[r_i0]
+        r_i0 += one_ring[r_i0] + 1
+        len_one_r += 1
+
+    ring_vert = np.zeros((max_n_ring, 3), dtype=np.float64)
+
+    assert len_one_r == nv and r_i0 == one_ring.shape[0]
+    i_const = 0
+    div = np.zeros((nv * 4))
+    r_i0 = 0
+    for i in range(nv):
+        ring_nv = one_ring[r_i0]
+        if ring_nv > 1:
+            for r_i in range(ring_nv):
+                ring_vert[r_i, :] = vertices[one_ring[r_i0 + r_i + 1]]
+
+            # edges connecting the point to itś neighbours
+            edges_vect = ring_vert - vertices[i, :]
+
+            for k in range(ring_nv):
+                e1 = -edges_vect[(k - 1) % ring_nv]
+                o1 = edges_vect[k] + e1
+                cos1 = np.dot(e1, o1)
+                sin1 = norm(np.cross(o1, e1))
+                cot1 = cos1 / sin1
+
+                e2 = -edges_vect[(k + 1) % ring_nv]
+                o2 = edges_vect[k] + e2
+                cos2 = np.dot(e2, o2)
+                sin2 = norm(np.cross(e2, o2))
+
+                cot2 = cos2 / sin2
+
+                j = one_ring[r_i0 + k + 1]
+                eij[1:] = edges_vect[k]
+                e_new = (
+                    1
+                    / 3
+                    * mul_quatern(
+                        lambdc[i * 4 : i * 4 + 4],
+                        mul_quatern(eij, lambd[i * 4 : i * 4 + 4]),
+                    )
+                )
+                e_new += (
+                    1
+                    / 6
+                    * mul_quatern(
+                        lambdc[i * 4 : i * 4 + 4],
+                        mul_quatern(eij, lambd[j * 4 : j * 4 + 4]),
+                    )
+                )
+                e_new += (
+                    1
+                    / 6
+                    * mul_quatern(
+                        lambdc[j * 4 : j * 4 + 4],
+                        mul_quatern(eij, lambd[i * 4 : i * 4 + 4]),
+                    )
+                )
+                e_new += (
+                    1
+                    / 3
+                    * mul_quatern(
+                        lambdc[j * 4 : j * 4 + 4],
+                        mul_quatern(eij, lambd[j * 4 : j * 4 + 4]),
+                    )
+                )
+                # print(norm(e_new-eij))
+
+                div[4 * i + 1 : 4 * i + 4] += e_new[1:] * (cot2 + cot1)
+                i_const = i
+        r_i0 += ring_nv + 1
+
+    constraint_idx[0] = i_const
+    constraint_idx[1] = j
+    constraint_pos[0, 1:] = vertices[i_const, :]
+    constraint_pos[1, 1:] = vertices[i_const, :] + e_new[1:]
+
+    return div, constraint_idx, constraint_pos
+
+
 if __name__ == "__main__":
     cc.compile()
