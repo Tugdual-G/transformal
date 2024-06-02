@@ -31,6 +31,7 @@ def get_oriented_one_ring(trimesh):
 
     one_ordered = np.array([x for r in one_ordered for x in r])
 
+    # the values must be extracted before use, otherwise we get trash
     normals = np.zeros((nv, 3), dtype=np.float64)
     normals[:] = trimesh.vertex_normals
 
@@ -58,58 +59,6 @@ def symetric_delete(i_del, idx_i, idx_j, data, n):
     idx_j = idx_j[:idx_sp]
     data = data[:idx_sp]
     return idx_i, idx_j, data
-
-
-def create_dirac_op(trimesh, rho):
-
-    nv = trimesh.vertices.shape[0]
-    vertices = np.zeros((nv, 3), dtype=np.float64)
-    vertices[:] = trimesh.vertices
-    assert rho.shape[0] == nv
-
-    g = nx.from_edgelist(trimesh.edges_unique)
-    one_ring = [list(g[i].keys()) for i in range(nv)]
-
-    n_entries = nv
-    for i in one_ring:
-        n_entries += len(i)
-    n_entries *= 16
-
-    one_ordered = [
-        [len(ring)] + nx.cycle_basis(g.subgraph(ring))[0] for ring in one_ring
-    ]
-
-    one_ordered = np.array([x for r in one_ordered for x in r])
-
-    normals = np.zeros((nv, 3), dtype=np.float64)
-    normals[:] = trimesh.vertex_normals
-
-    set_rings_order(one_ordered, normals, vertices)
-    return dirac_op(vertices, one_ordered, rho)
-
-
-def new_edges_div(trimesh, lambd):
-    vertices = trimesh.vertices
-    nv = vertices.shape[0]
-
-    g = nx.from_edgelist(trimesh.edges_unique)
-    one_ring = [list(g[i].keys()) for i in range(nv)]
-    n_entries = nv
-    for i in one_ring:
-        n_entries += len(i)
-    n_entries *= 16
-
-    one_ordered = [
-        [len(ring)] + nx.cycle_basis(g.subgraph(ring))[0] for ring in one_ring
-    ]
-
-    one_ordered = np.array([x for r in one_ordered for x in r])
-    normals = np.zeros((nv, 3), dtype=np.float64)
-    normals[:] = trimesh.vertex_normals
-
-    set_rings_order(one_ordered, normals, vertices)
-
-    return edges_div(vertices, lambd, one_ordered)
 
 
 def quaternionic_laplacian_matrix(trimesh):
@@ -209,15 +158,16 @@ def transform(trimesh, rho):
 
     vertices = trimesh.vertices
     nv = vertices.shape[0]
+    one_ring = get_oriented_one_ring(trimesh)
 
-    d_i, d_j, d_data = create_dirac_op(trimesh, rho)
-    X = sparse.csc_array((d_data, (d_i, d_j)))
+    d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
+    X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
     print(f"{np.abs(X-X.T).max() = }")
 
     lambd = np.zeros(4 * nv)
     eigensolve(X, lambd)
 
-    div_e, constridx, constrpos = new_edges_div(trimesh, lambd)
+    div_e, constridx, constrpos = edges_div(vertices, lambd, one_ring)
 
     idx_i, idx_j, data = quaternionic_laplacian_matrix(trimesh)
 
