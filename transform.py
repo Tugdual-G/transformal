@@ -62,98 +62,6 @@ def create_dirac_op(trimesh, rho):
     return dirac_op(vertices, one_ordered, rho)
 
 
-def create_dirac_op_sparse(trimesh, rho):
-    vertices = trimesh.vertices
-    nv = vertices.shape[0]
-    assert rho.shape[0] == nv
-
-    ei = np.zeros(4, dtype=np.float64)
-    ej = np.zeros(4, dtype=np.float64)
-    X_ii = np.zeros(4, dtype=np.float64)
-    block_ij = np.zeros((4, 4), dtype=np.float64)
-
-    g = nx.from_edgelist(trimesh.edges_unique)
-    one_ring = [list(g[i].keys()) for i in range(nv)]
-
-    n_entries = nv
-    for i in one_ring:
-        n_entries += len(i)
-    n_entries *= 16
-
-    one_ordered = [nx.cycle_basis(g.subgraph(i))[0] for i in one_ring]
-    set_ring_order(one_ordered, trimesh.vertex_normals, vertices)
-
-    print(f"{n_entries =}")
-    idx_i = np.zeros(n_entries, dtype=np.int_)
-    idx_j = np.zeros(n_entries, dtype=np.int_)
-    data = np.zeros(n_entries, dtype=np.float64)
-
-    sp_k = 0
-    for i in range(nv):
-        # TODO won't work for bounded domain
-        if len(one_ordered[i]) > 0:
-            ring_vert = vertices[one_ordered[i]]
-            ring_nv = ring_vert.shape[0]
-            vi = vertices[i, :]
-
-            X_ii[:] = 0.0
-            for k in range(ring_nv):
-                j = one_ordered[i][k]
-                ei[1:] = ring_vert[k] - ring_vert[(k - 1) % ring_nv]
-                ej[1:] = ring_vert[(k - 1) % ring_nv] - vi
-                # print(ring_vert)
-                # print(ei[1:], ej[1:])
-                A_x2 = norm(np.cross(ei[1:], ej[1:]))
-                X_ij = (
-                    -mul_quatern(ei, ej) / (2 * A_x2)
-                    + (rho[i] * ej - rho[j] * ei) / 6.0
-                )
-                X_ij[0] += rho[i] * rho[j] * A_x2 / 18.0
-
-                ei[1:] = ring_vert[(k + 1) % ring_nv] - ring_vert[k]
-                ej[1:] = vi - ring_vert[(k + 1) % ring_nv]
-                A_x2 = norm(np.cross(ei[1:], ej[1:]))
-                X_ij += (
-                    -mul_quatern(ei, ej) / (2 * A_x2)
-                    + (rho[i] * ej - rho[j] * ei) / 6.0
-                )
-                X_ij[0] += rho[i] * rho[j] * A_x2 / 18.0
-
-                block_ij[:, :] = [
-                    [X_ij[0], -X_ij[1], -X_ij[2], -X_ij[3]],
-                    [X_ij[1], X_ij[0], -X_ij[3], X_ij[2]],
-                    [X_ij[2], X_ij[3], X_ij[0], -X_ij[1]],
-                    [X_ij[3], -X_ij[2], X_ij[1], X_ij[0]],
-                ]
-
-                for l in range(4):
-                    for m in range(4):
-                        idx_i[sp_k] = i * 4 + l
-                        idx_j[sp_k] = j * 4 + m
-                        data[sp_k] = block_ij[l, m]
-                        sp_k += 1
-
-                X_ii -= mul_quatern(ei, ei) / (2 * A_x2)
-                X_ii[0] += rho[i] * rho[i] * A_x2 / 18.0
-
-            block_ij[:, :] = [
-                [X_ii[0], -X_ii[1], -X_ii[2], -X_ii[3]],
-                [X_ii[1], X_ii[0], -X_ii[3], X_ii[2]],
-                [X_ii[2], X_ii[3], X_ii[0], -X_ii[1]],
-                [X_ii[3], -X_ii[2], X_ii[1], X_ii[0]],
-            ]
-
-            for l in range(4):
-                for m in range(4):
-                    idx_i[sp_k] = i * 4 + l
-                    idx_j[sp_k] = i * 4 + m
-                    data[sp_k] = block_ij[l, m]
-                    sp_k += 1
-
-    print(f"{sp_k =}")
-    return idx_i, idx_j, data
-
-
 def new_edges_divergence(trimesh, lambd):
     nv = trimesh.vertices.shape[0]
 
@@ -346,11 +254,7 @@ def transform(trimesh, rho):
 
     d_i, d_j, d_data = create_dirac_op(trimesh, rho)
     X = sparse.csc_array((d_data, (d_i, d_j)))
-
-    # d_i, d_j, d_data = create_dirac_op_sparse(trimesh, rho)
-    # X = sparse.csc_array((d_data, (d_i, d_j)))
-    # print(f"{np.abs(X-X0).max() = }")
-    # print(f"{np.abs(X-X.T).max() = }")
+    print(f"{np.abs(X-X.T).max() = }")
 
     lambd = np.zeros(4 * nv)
     eigensolve(X, lambd)
