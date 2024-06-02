@@ -113,6 +113,11 @@ def transform(trimesh, rho):
 
     # Applying the transform defined by lambd on the edge vectors
     div_e, constridx, constrpos = edges_div(vertices, lambd, one_ring)
+    i_sorted = np.argsort(constridx)
+    constridx = constridx[i_sorted]
+    constrpos = constrpos[i_sorted]
+    i1 = constridx[0]
+    i2 = constridx[1]
 
     # Building the laplacian matrix to solve L x = div_e
     idx_i, idx_j, data = quaternionic_laplacian_matrix(vertices, one_ring)
@@ -123,12 +128,6 @@ def transform(trimesh, rho):
     # TODO make it work for bounded shapes
     for i, c in zip(constridx, constrpos):
         div_e[:] -= L[:, i * 4 : i * 4 + 4] @ c.T
-
-    i_sorted = np.argsort(constridx)
-    constridx = constridx[i_sorted]
-    constrpos = constrpos[i_sorted]
-    i1 = constridx[0]
-    i2 = constridx[1]
 
     i_del = [ic * 4 + i for ic in [i1, i2] for i in range(4)]
 
@@ -147,18 +146,17 @@ def transform(trimesh, rho):
     # cond = norm_L*norm_invA
     # print(f"L condition number = {cond}")
 
-    new_vertices_wp = sparse.linalg.spsolve(L, div_e)
-    # new_vertices = solve(L, div_e, assume_a='sym')
-    residual = norm(L @ new_vertices_wp - div_e)
+    new_vertices = sparse.linalg.spsolve(L, div_e)
+    residual = norm(L @ new_vertices - div_e)
     if residual > 1e-10:
         print(f"WARNING : {residual =}")
 
-    new_vertices_wp.shape = (nv - 2, 4)
-    vertices[:i1, :] = new_vertices_wp[:i1, 1:]
+    new_vertices.shape = (nv - 2, 4)
+    vertices[:i1, :] = new_vertices[:i1, 1:]
     vertices[i1, :] = constrpos[0, 1:]
-    vertices[i1 + 1 : i2, :] = new_vertices_wp[i1 : i2 - 1, 1:]
+    vertices[i1 + 1 : i2, :] = new_vertices[i1 : i2 - 1, 1:]
     vertices[i2, :] = constrpos[1, 1:]
-    vertices[i2 + 1 :, :] = new_vertices_wp[i2 - 1 :, 1:]
+    vertices[i2 + 1 :, :] = new_vertices[i2 - 1 :, 1:]
 
 
 if __name__ == "__main__":
