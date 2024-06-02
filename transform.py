@@ -13,6 +13,7 @@ from operators import (
     edges_div,
     quaternionic_laplacian_matrix,
     mean_curvature,
+    symetric_delete,
 )
 
 
@@ -46,28 +47,6 @@ def get_oriented_one_ring(trimesh):
 def scalar_curvature(trimesh, kN):
     assert kN.shape[0] == trimesh.vertices.shape[0]
     return np.sum(trimesh.vertex_normals * kN, axis=1)
-
-
-def symetric_delete(i_del, idx_i, idx_j, data, n):
-    idx_table = np.empty(n, np.int_)
-    idx_sp = 0
-    for k in range(n):
-        if k not in i_del:
-            idx_table[k] = idx_sp
-            idx_sp += 1
-
-    idx_sp = 0
-    for k in range(data.shape[0]):
-        if (idx_i[k] not in i_del) and (idx_j[k] not in i_del):
-            idx_i[idx_sp] = idx_table[idx_i[k]]
-            idx_j[idx_sp] = idx_table[idx_j[k]]
-            data[idx_sp] = data[k]
-            idx_sp += 1
-
-    idx_i = idx_i[:idx_sp]
-    idx_j = idx_j[:idx_sp]
-    data = data[:idx_sp]
-    return idx_i, idx_j, data
 
 
 def eigensolve(M, v):
@@ -129,7 +108,7 @@ def transform(trimesh, rho):
     for i, c in zip(constridx, constrpos):
         div_e[:] -= L[:, i * 4 : i * 4 + 4] @ c.T
 
-    i_del = [ic * 4 + i for ic in [i1, i2] for i in range(4)]
+    i_del = np.array([ic * 4 + i for ic in [i1, i2] for i in range(4)], dtype=np.int_)
 
     # Specific rows and columns need to get deleted to get a well posed problem,
     # this is specific to mesh without boundaries.

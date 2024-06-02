@@ -400,5 +400,31 @@ def mean_curvature(vertices, one_ring):
     return kN
 
 
+@cc.export(
+    "symetric_delete",
+    "Tuple((i8[::1],i8[::1],f8[::1]))(i8[::1],i8[::1], i8[::1],f8[::1],i8)",
+)
+def symetric_delete(i_del, idx_i, idx_j, data, n):
+    idx_table = np.empty(n, np.int_)
+    idx_sp = 0
+    for k in range(n):
+        if k not in i_del:
+            idx_table[k] = idx_sp
+            idx_sp += 1
+
+    idx_sp = 0
+    for k in range(data.shape[0]):
+        if (idx_i[k] not in i_del) and (idx_j[k] not in i_del):
+            idx_i[idx_sp] = idx_table[idx_i[k]]
+            idx_j[idx_sp] = idx_table[idx_j[k]]
+            data[idx_sp] = data[k]
+            idx_sp += 1
+
+    idx_i = idx_i[:idx_sp]
+    idx_j = idx_j[:idx_sp]
+    data = data[:idx_sp]
+    return idx_i, idx_j, data
+
+
 if __name__ == "__main__":
     cc.compile()
