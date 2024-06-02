@@ -2,10 +2,10 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import art3d
 from matplotlib.colors import LightSource
-from transform import transform
-from trimesh_curvature import mean_curvature, scalar_curvature
 import trimesh
 import numpy as np
+from transform import transform, get_oriented_one_ring, scalar_curvature
+from operators import mean_curvature
 
 
 def plot_normals(ax, vertices, normals, length=10, color="r"):
@@ -21,15 +21,16 @@ def vertex2face(trimesh, vval):
 
 
 trimesh = trimesh.load("meshes/sphere.ply")
-print("number of vertices", trimesh.vertices.shape[0])
+vertices = trimesh.vertices
+nv = vertices.shape[0]
+print("number of vertices", nv)
 
-kN = mean_curvature(trimesh)
+
+one_ring = get_oriented_one_ring(trimesh)
+kN = mean_curvature(vertices, one_ring)
 k = scalar_curvature(trimesh, kN)
 mk = np.mean(k)
 print("mean curvature =", mk)
-
-vertices = trimesh.vertices
-nv = vertices.shape[0]
 
 
 R = 50
@@ -79,7 +80,7 @@ zlim = [(vertices[:, 2].min(), vertices[:, 2].max())]
 
 transform(trimesh, rho)
 
-kN = mean_curvature(trimesh)
+kN = mean_curvature(vertices, one_ring)
 k = scalar_curvature(trimesh, kN)
 
 k_fc = vertex2face(trimesh, k)

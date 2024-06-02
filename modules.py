@@ -270,5 +270,135 @@ def edges_div(vertices, lambd, one_ring):
     return div, constraint_idx, constraint_pos
 
 
+@cc.export(
+    "quaternionic_laplacian_matrix",
+    "Tuple((i8[::1],i8[::1],f8[::1]))(f8[:,::1], i8[::1])",
+)
+def quaternionic_laplacian_matrix(vertices, one_ring):
+    nv = vertices.shape[0]
+
+    max_n_ring = 0
+    n_entries = nv
+    r_i0 = 0
+    len_one_r = 0
+    while r_i0 < one_ring.shape[0] and len_one_r < nv:
+        n_entries += one_ring[r_i0]
+        if one_ring[r_i0] > max_n_ring:
+            max_n_ring = one_ring[r_i0]
+        r_i0 += one_ring[r_i0] + 1
+        len_one_r += 1
+
+    assert len_one_r == nv and r_i0 == one_ring.shape[0]
+
+    ring_vert = np.zeros((max_n_ring, 3), dtype=np.float64)
+    n_entries *= 16
+
+    idx_i = np.zeros(n_entries, dtype=np.int_)
+    idx_j = np.zeros(n_entries, dtype=np.int_)
+    data = np.zeros(n_entries, dtype=np.float64)
+
+    cot = 0.0
+    diag = 0.0
+    sp_k = 0
+    r_i0 = 0
+    for i in range(nv):
+        ring_nv = one_ring[r_i0]
+        if ring_nv > 2:
+            for r_i in range(ring_nv):
+                ring_vert[r_i, :] = vertices[one_ring[r_i0 + r_i + 1]]
+
+            # edges connecting the point to itś neighbours
+            edges_vect = ring_vert - vertices[i, :]
+
+            # iterating over each of the edges adjacent to the vertex i
+            diag = 0.0
+            for k in range(ring_nv):
+                e1 = -edges_vect[(k - 1) % ring_nv]
+                o1 = edges_vect[k] + e1
+                cos1 = np.dot(e1, o1)
+                sin1 = norm(np.cross(o1, e1))
+                cot = cos1 / sin1
+
+                e2 = -edges_vect[(k + 1) % ring_nv]
+                o2 = edges_vect[k] + e2
+
+                cos2 = np.dot(e2, o2)
+                sin2 = norm(np.cross(e2, o2))
+
+                cot += cos2 / sin2
+
+                j = one_ring[r_i0 + k + 1]
+                diag -= cot
+                for l in range(4):
+                    idx_i[sp_k] = i * 4 + l
+                    idx_j[sp_k] = j * 4 + l
+                    data[sp_k] = cot
+                    sp_k += 1
+
+            for l in range(4):
+                idx_i[sp_k] = i * 4 + l
+                idx_j[sp_k] = i * 4 + l
+                data[sp_k] = diag
+                sp_k += 1
+        r_i0 += ring_nv + 1
+
+    return idx_i, idx_j, data
+
+
+@cc.export(
+    "mean_curvature",
+    "f8[:,::1](f8[:,::1], i8[::1])",
+)
+def mean_curvature(vertices, one_ring):
+
+    nv = vertices.shape[0]
+
+    max_n_ring = 0
+    r_i0 = 0
+    len_one_r = 0
+    while r_i0 < one_ring.shape[0] and len_one_r < nv:
+        if one_ring[r_i0] > max_n_ring:
+            max_n_ring = one_ring[r_i0]
+        r_i0 += one_ring[r_i0] + 1
+        len_one_r += 1
+
+    assert len_one_r == nv and r_i0 == one_ring.shape[0]
+    ring_vert = np.zeros((max_n_ring, 3), dtype=np.float64)
+
+    kN = np.zeros((nv, 3), dtype=np.float64)
+    r_i0 = 0
+    for i in range(nv):
+        ring_nv = one_ring[r_i0]
+        if ring_nv > 1:
+            for r_i in range(ring_nv):
+                ring_vert[r_i, :] = vertices[one_ring[r_i0 + r_i + 1]]
+
+            # edges connecting the point to itś neighbours
+            edges_vect = ring_vert - vertices[i, :]
+
+            # area of the ring
+            A = 0
+            for j in range(ring_nv - 1):
+                A += norm(np.cross(edges_vect[j], edges_vect[(j + 1) % ring_nv]))
+
+            for j in range(ring_nv):
+                e1 = edges_vect[(j - 1) % ring_nv].copy()
+                o1 = ring_vert[j] - ring_vert[(j - 1) % ring_nv]
+                cos1 = np.dot(e1, o1)
+                sin1 = np.linalg.norm(np.cross(o1, e1))
+                cot1 = cos1 / sin1
+
+                e2 = edges_vect[(j + 1) % ring_nv].copy()
+                o2 = ring_vert[j] - ring_vert[(j + 1) % ring_nv]
+                cos2 = np.dot(e2, o2)
+                sin2 = np.linalg.norm(np.cross(e2, o2))
+                cot2 = cos2 / sin2
+
+                kN[i] -= edges_vect[j] * (cot2 + cot1)
+            kN[i] /= 2 * A
+        r_i0 += ring_nv + 1
+    return kN
+
+
 if __name__ == "__main__":
     cc.compile()

@@ -6,10 +6,14 @@ import trimesh
 import networkx as nx
 from scipy import sparse
 from scipy.linalg import issymmetric
-from trimesh_curvature import scalar_curvature, mean_curvature
-from operators import dirac_op, set_rings_order, mul_quatern, edges_div
-
-# from modules import edges_div
+from operators import (
+    dirac_op,
+    set_rings_order,
+    mul_quatern,
+    edges_div,
+    quaternionic_laplacian_matrix,
+    mean_curvature,
+)
 
 
 def get_oriented_one_ring(trimesh):
@@ -39,6 +43,11 @@ def get_oriented_one_ring(trimesh):
     return one_ordered
 
 
+def scalar_curvature(trimesh, kN):
+    assert kN.shape[0] == trimesh.vertices.shape[0]
+    return np.sum(trimesh.vertex_normals * kN, axis=1)
+
+
 def symetric_delete(i_del, idx_i, idx_j, data, n):
     idx_table = np.empty(n, np.int_)
     idx_sp = 0
@@ -58,72 +67,6 @@ def symetric_delete(i_del, idx_i, idx_j, data, n):
     idx_i = idx_i[:idx_sp]
     idx_j = idx_j[:idx_sp]
     data = data[:idx_sp]
-    return idx_i, idx_j, data
-
-
-def quaternionic_laplacian_matrix(trimesh):
-    nv = trimesh.vertices.shape[0]
-    g = nx.from_edgelist(trimesh.edges_unique)
-    one_ring = [list(g[i].keys()) for i in range(nv)]
-    one_ordered = [nx.cycle_basis(g.subgraph(i)) for i in one_ring]
-    L = np.zeros((nv * 4, nv * 4))
-
-    n_entries = nv
-    for i in one_ring:
-        n_entries += len(i)
-    n_entries *= 16
-    idx_i = np.zeros(n_entries, dtype=np.int_)
-    idx_j = np.zeros(n_entries, dtype=np.int_)
-    data = np.zeros(n_entries, dtype=np.float64)
-
-    cot = 0.0
-    diag = 0.0
-    sp_k = 0
-    for i in range(nv):
-        if len(one_ordered[i][0]) > 0:
-            ring_vert = trimesh.vertices[one_ordered[i][0]]
-
-            # edges connecting the point to itś neighbours
-            edges_vect = ring_vert - trimesh.vertices[i, :]
-            vertex_normal = trimesh.vertex_normals[i]
-            sign = np.dot(vertex_normal, np.cross(edges_vect[0], edges_vect[1]))
-            sign = int(np.sign(sign))
-            edges_vect = edges_vect[::sign, :]
-            one_ordered[i][0] = one_ordered[i][0][::sign]
-            ring_vert = ring_vert[::sign, :]
-
-            ring_nv = ring_vert.shape[0]
-            # iterating over each of the edges adjacent to the vertex i
-            diag = 0.0
-            for k in range(ring_nv):
-                e1 = -edges_vect[(k - 1) % ring_nv]
-                o1 = edges_vect[k] + e1
-                cos1 = np.dot(e1, o1)
-                sin1 = norm(np.cross(o1, e1))
-                cot = cos1 / sin1
-
-                e2 = -edges_vect[(k + 1) % ring_nv]
-                o2 = edges_vect[k] + e2
-
-                cos2 = np.dot(e2, o2)
-                sin2 = norm(np.cross(e2, o2))
-
-                cot += cos2 / sin2
-
-                j = one_ordered[i][0][k]
-                diag -= cot
-                for l in range(4):
-                    idx_i[sp_k] = i * 4 + l
-                    idx_j[sp_k] = j * 4 + l
-                    data[sp_k] = cot
-                    sp_k += 1
-
-            for l in range(4):
-                idx_i[sp_k] = i * 4 + l
-                idx_j[sp_k] = i * 4 + l
-                data[sp_k] = diag
-                sp_k += 1
-
     return idx_i, idx_j, data
 
 
@@ -155,45 +98,48 @@ def eigensolve(M, v):
 
 
 def transform(trimesh, rho):
-
     vertices = trimesh.vertices
     nv = vertices.shape[0]
     one_ring = get_oriented_one_ring(trimesh)
 
+    # building the operator (D - rho)
     d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
     X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
     print(f"{np.abs(X-X.T).max() = }")
 
+    # finding the eigenvector lambd for the minimum eigenvalue
     lambd = np.zeros(4 * nv)
     eigensolve(X, lambd)
 
+    # Applying the transform defined by lambd on the edge vectors
     div_e, constridx, constrpos = edges_div(vertices, lambd, one_ring)
 
-    idx_i, idx_j, data = quaternionic_laplacian_matrix(trimesh)
-
+    # Building the laplacian matrix to solve L x = div_e
+    idx_i, idx_j, data = quaternionic_laplacian_matrix(vertices, one_ring)
     # csc for row slicing
     L = sparse.csc_array((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
 
     # Applying constraint to the system
     # TODO make it work for bounded shapes
-    for c in zip(constridx, constrpos):
-        i = c[0]
-        div_e[:] -= L[:, i * 4 : i * 4 + 4] @ c[1].T
+    for i, c in zip(constridx, constrpos):
+        div_e[:] -= L[:, i * 4 : i * 4 + 4] @ c.T
 
     i_sorted = np.argsort(constridx)
-    i1 = constridx[i_sorted[0]]
-    i2 = constridx[i_sorted[1]]
+    constridx = constridx[i_sorted]
+    constrpos = constrpos[i_sorted]
+    i1 = constridx[0]
+    i2 = constridx[1]
 
     i_del = [ic * 4 + i for ic in [i1, i2] for i in range(4)]
 
+    # Specific rows and columns need to get deleted to get a well posed problem,
+    # this is specific to mesh without boundaries.
     idx_i, idx_j, data = symetric_delete(i_del, idx_i, idx_j, data, nv * 4)
+    div_e = np.delete(div_e, i_del, axis=0)
 
-    # csr
+    # Rebuild the csr matrix
     L = sparse.csc_array((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
-    # Ls = (L + L.T)/2
-    # print(f"{issymmetric(L.todense()) = }")
-
-    div_wp = np.delete(div_e, i_del, axis=0)
+    print(f"{np.abs(L-L.T).max() = }")
 
     # norm_L = norm(L)
     # inv_L = inv(L)
@@ -201,16 +147,18 @@ def transform(trimesh, rho):
     # cond = norm_L*norm_invA
     # print(f"L condition number = {cond}")
 
-    new_vertices_wp = sparse.linalg.spsolve(L, div_wp)
+    new_vertices_wp = sparse.linalg.spsolve(L, div_e)
     # new_vertices = solve(L, div_e, assume_a='sym')
-    residual = norm(L @ new_vertices_wp - div_wp)
+    residual = norm(L @ new_vertices_wp - div_e)
     if residual > 1e-10:
         print(f"WARNING : {residual =}")
 
     new_vertices_wp.shape = (nv - 2, 4)
-    new_vertices = np.insert(new_vertices_wp, i1, constrpos[i_sorted[0]], axis=0)
-    new_vertices = np.insert(new_vertices, i2, constrpos[i_sorted[1]], axis=0)
-    vertices[:, :] = new_vertices[:, 1:]
+    vertices[:i1, :] = new_vertices_wp[:i1, 1:]
+    vertices[i1, :] = constrpos[0, 1:]
+    vertices[i1 + 1 : i2, :] = new_vertices_wp[i1 : i2 - 1, 1:]
+    vertices[i2, :] = constrpos[1, 1:]
+    vertices[i2 + 1 :, :] = new_vertices_wp[i2 - 1 :, 1:]
 
 
 if __name__ == "__main__":
@@ -231,15 +179,15 @@ if __name__ == "__main__":
     # trimesh = trimesh.Trimesh(vertices=[[0, 0, 0], [1, 0, 0], [0, 1, 0],[0,0,1]],
     #                     faces=[[0, 1, 3],[1,2,3],[2,0,3],[0,2,1]])
     trimesh = trimesh.load("meshes/sphere.ply")
-    print("number of vertices", trimesh.vertices.shape[0])
+    vertices = trimesh.vertices
+    nv = vertices.shape[0]
+    print("number of vertices", nv)
 
-    kN = mean_curvature(trimesh)
+    one_ring = get_oriented_one_ring(trimesh)
+    kN = mean_curvature(vertices, one_ring)
     k = scalar_curvature(trimesh, kN)
     mk = np.mean(k)
     print("mean curvature =", mk)
-
-    vertices = trimesh.vertices
-    nv = vertices.shape[0]
 
     R = 50
     pts = []
