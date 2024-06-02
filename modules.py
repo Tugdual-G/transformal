@@ -27,56 +27,89 @@ def mul_quatern(u, v):
 
 
 @cc.export(
-    "dirac",
-    "Tuple((i8[::1],i8[::1],f8[::1]))(f8[:,::1], f8[:,::1], List(List(i8)), f8[::1])",
+    "set_rings_order",
+    "(i8[::1], f8[:,::1],f8[:,::1])",
 )
-def create_dirac_op_sparse(vertices, normals, one_ring_ordered, rho):
+def set_rings_order(one_ring, normals, vertices):
+    ei = np.zeros(3, dtype=np.float64)
+    ej = np.zeros(3, dtype=np.float64)
 
+    i0 = 0
+    vi = 0
+    while i0 < one_ring.shape[0]:
+        ring_length = one_ring[i0]
+        sign = 1
+        if ring_length > 1:
+            j0 = one_ring[i0 + 1]
+            j1 = one_ring[i0 + 2]
+            v = vertices[vi, :]
+            vertex_normal = normals[vi, :]
+            ei[:] = vertices[j0, :] - v
+            ej[:] = vertices[j1, :] - v
+            sign = int(np.dot(vertex_normal, np.cross(ei, ej)))
+
+        if sign < 0:
+            for j in range(ring_length // 2):
+                or_tmp = one_ring[i0 + j + 1]
+                one_ring[i0 + j + 1] = one_ring[i0 + ring_length - j]
+                one_ring[i0 + ring_length - j] = or_tmp
+        # oring += [one_ring[i0 : i0 + one_ring[i0] + 1].tolist()]
+        i0 += one_ring[i0] + 1
+        vi += 1
+
+    assert vi == normals.shape[0]
+
+
+@cc.export(
+    "dirac_op",
+    "Tuple((i8[::1],i8[::1],f8[::1]))(f8[:,::1], i8[::1], f8[::1])",
+)
+def dirac_op(vertices, one_ring, rho):
     nv = vertices.shape[0]
-
-    assert rho.shape[0] == nv and nv == normals.shape[0]
+    assert rho.shape[0] == nv
 
     ei = np.zeros(4, dtype=np.float64)
     ej = np.zeros(4, dtype=np.float64)
     X_ii = np.zeros(4, dtype=np.float64)
     block_ij = np.zeros((4, 4), dtype=np.float64)
 
-    n_entries = nv
     max_n_ring = 0
-    for i in one_ring_ordered:
-        n_entries += len(i)
-        if len(i) > max_n_ring:
-            max_n_ring = len(i)
+    n_entries = nv
+    r_i0 = 0
+    len_one_r = 0
+    while r_i0 < one_ring.shape[0] and len_one_r < nv:
+        n_entries += one_ring[r_i0]
+        if one_ring[r_i0] > max_n_ring:
+            max_n_ring = one_ring[r_i0]
+        r_i0 += one_ring[r_i0] + 1
+        len_one_r += 1
 
+    assert len_one_r == nv and r_i0 == one_ring.shape[0]
+
+    ring_vert = np.zeros((max_n_ring, 3), dtype=np.float64)
     n_entries *= 16
 
     idx_i = np.zeros(n_entries, dtype=np.int_)
     idx_j = np.zeros(n_entries, dtype=np.int_)
     data = np.zeros(n_entries, dtype=np.float64)
-    ring_vert = np.zeros((max_n_ring, 3), dtype=np.float64)
 
     sp_k = 0
+    r_i0 = 0
     for i in range(nv):
-        # TODO won't work for bounded domain
-        ring_nv = len(one_ring_ordered[i])
-        if ring_nv > 0:
-            for ri in range(ring_nv):
-                ring_vert[ri, :] = vertices[one_ring_ordered[i][ri]]
-            vi = vertices[i, :]
-            vertex_normal = normals[i, :]
-            ei[1:] = ring_vert[1] - ring_vert[0]
-            ej[1:] = ring_vert[0] - vi
-            sign = np.dot(vertex_normal, np.cross(ej[1:], ei[1:]))
-            sign = int(np.sign(sign))
-            ring_vert = ring_vert[::sign, :]
-            one_ring_ordered[i] = one_ring_ordered[i][::sign]
+        # TODO on't work for bounded domain
+        ring_nv = one_ring[r_i0]
+        if ring_nv > 1:
+            for r_i in range(ring_nv):
+                ring_vert[r_i, :] = vertices[one_ring[r_i0 + r_i + 1]]
+            v = vertices[i, :]
 
             X_ii[:] = 0.0
             for k in range(ring_nv):
-                j = one_ring_ordered[i][k]
+                j = one_ring[r_i0 + k + 1]
                 ei[1:] = ring_vert[k] - ring_vert[(k - 1) % ring_nv]
-                ej[1:] = ring_vert[(k - 1) % ring_nv] - vi
-
+                ej[1:] = ring_vert[(k - 1) % ring_nv] - v
+                # print(ring_vert)
+                # print(ei[1:], ej[1:])
                 A_x2 = norm(np.cross(ei[1:], ej[1:]))
                 X_ij = (
                     -mul_quatern(ei, ej) / (2 * A_x2)
@@ -85,7 +118,7 @@ def create_dirac_op_sparse(vertices, normals, one_ring_ordered, rho):
                 X_ij[0] += rho[i] * rho[j] * A_x2 / 18.0
 
                 ei[1:] = ring_vert[(k + 1) % ring_nv] - ring_vert[k]
-                ej[1:] = vi - ring_vert[(k + 1) % ring_nv]
+                ej[1:] = v - ring_vert[(k + 1) % ring_nv]
                 A_x2 = norm(np.cross(ei[1:], ej[1:]))
                 X_ij += (
                     -mul_quatern(ei, ej) / (2 * A_x2)
@@ -127,6 +160,7 @@ def create_dirac_op_sparse(vertices, normals, one_ring_ordered, rho):
                     idx_j[sp_k] = i * 4 + m
                     data[sp_k] = block_ij[l, m]
                     sp_k += 1
+            r_i0 += ring_nv + 1
 
     return idx_i, idx_j, data
 
