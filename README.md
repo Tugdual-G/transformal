@@ -1,7 +1,7 @@
 ![example of flow](animation_crop.gif)
 
 Basic conformal transformation script using 
-_CRANE, Keenan, PINKALL, Ulrich, et SCHRÖDER, Peter. Spin transformations of discrete surfaces. ACM SCRUFF 2011 papers, 2011, p. 1-10._
+_CRANE, Keenan, PINKALL, Ulrich, and SCHRÖDER, Peter. Spin transformations of discrete surfaces. ACM SCRUFF 2011 papers, 2011, p. 1-10._
 
 It is possible to apply a curvature flow, such as shown in the script *flow_example.py* .
 ## Dependencies
