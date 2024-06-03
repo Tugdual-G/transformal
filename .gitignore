@@ -13,6 +13,7 @@ build
 *.pdf
 *.ply
 try
+!curvature_example.py
 !sphere.ply
 !knobitle.ply
 !deform.ply
