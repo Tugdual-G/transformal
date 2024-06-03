@@ -55,17 +55,17 @@ def eigensolve(M, v):
     v[::4] = 1.0
     # eigval, eigvect= sparse.linalg.eigsh(M, k=1, sigma=0, which='LM', tol=0)
     # v = eigvect[:, 0]
-    for i in range(5):
+    for i in range(4):
         v[:] = sparse.linalg.spsolve(M, v)
         v.shape = (nv // 4, 4)
         v /= np.sqrt(np.sum(v**2))
         v.shape = (nv,)
 
-    v_res = M @ v
-    v_res.shape = (nv // 4, 4)
-    v_res /= np.sqrt(np.sum(v_res**2))
-    v_res.shape = (nv,)
-    print("eigen vector residual inf norm :", norm(v_res - v, ord=np.inf))
+    # v_res = M @ v
+    # v_res.shape = (nv // 4, 4)
+    # v_res /= np.sqrt(np.sum(v_res**2))
+    # v_res.shape = (nv,)
+    # print("eigen vector residual inf norm :", norm(v_res - v, ord=np.inf))
     v.shape = (nv // 4, 4)
     v /= np.mean(np.sqrt(np.sum(v**2, axis=1)))
     v.shape = (nv,)
@@ -74,6 +74,58 @@ def eigensolve(M, v):
 # def symetric_delete2(i_del, L):
 #     L_wp = np.delete(L,i_del, axis=0)
 #     return np.delete(L_wp, i_del, axis=1)
+
+
+def flow(vertices, rho, one_ring):
+    nv = vertices.shape[0]
+
+    # building the operator (D - rho)
+    d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
+    X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
+
+    # finding the eigenvector lambd for the minimum eigenvalue
+    lambd = np.zeros(4 * nv)
+    eigensolve(X, lambd)
+
+    # Applying the transform defined by lambd on the edge vectors
+    div_e, constridx, constrpos = edges_div(vertices, lambd, one_ring)
+    i_sorted = np.argsort(constridx)
+    constridx = constridx[i_sorted]
+    constrpos = constrpos[i_sorted]
+    i1 = constridx[0]
+    i2 = constridx[1]
+
+    # Building the laplacian matrix to solve L x = div_e
+    idx_i, idx_j, data = quaternionic_laplacian_matrix(vertices, one_ring)
+    # csc for row slicing
+    L = sparse.csc_array((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
+
+    # Applying constraint to the system
+    # TODO make it work for bounded shapes
+    for i, c in zip(constridx, constrpos):
+        div_e[:] -= L[:, i * 4 : i * 4 + 4] @ c.T
+
+    i_del = np.array([ic * 4 + i for ic in [i1, i2] for i in range(4)], dtype=np.int_)
+
+    # Specific rows and columns need to get deleted to get a well posed problem,
+    # this is specific to mesh without boundaries.
+    idx_i, idx_j, data = symetric_delete(i_del, idx_i, idx_j, data, nv * 4)
+    div_e = np.delete(div_e, i_del, axis=0)
+
+    # Rebuild the csr matrix
+    L = sparse.csc_array((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
+
+    new_vertices = sparse.linalg.spsolve(L, div_e)
+    # residual = norm(L @ new_vertices - div_e)
+    # if residual > 1e-10:
+    #     print(f"WARNING : {residual =}")
+
+    new_vertices.shape = (nv - 2, 4)
+    vertices[:i1, :] = new_vertices[:i1, 1:]
+    vertices[i1, :] = constrpos[0, 1:]
+    vertices[i1 + 1 : i2, :] = new_vertices[i1 : i2 - 1, 1:]
+    vertices[i2, :] = constrpos[1, 1:]
+    vertices[i2 + 1 :, :] = new_vertices[i2 - 1 :, 1:]
 
 
 def transform(trimesh, rho):
@@ -153,45 +205,34 @@ if __name__ == "__main__":
         assert vval.shape[0] == trimesh.vertices.shape[0]
         return np.mean(vval[trimesh.faces], axis=1)
 
+    def to_cmap(v, v_min=None, v_max=None):
+        if not v_min:
+            v_min = v.min()
+
+        if not v_max:
+            v_max = v.max()
+        return plt.cm.plasma((v - v_min) / (v_max - v_min))
+
     # trimesh = trimesh.Trimesh(vertices=[[0, 0, 0], [1, 0, 0], [0, 1, 0],[0,0,1]],
     #                     faces=[[0, 1, 3],[1,2,3],[2,0,3],[0,2,1]])
-    trimesh = trimesh.load("meshes/sphere.ply")
+    trimesh = trimesh.load("meshes/deform.ply")
     vertices = trimesh.vertices
     nv = vertices.shape[0]
     print("number of vertices", nv)
 
     one_ring = get_oriented_one_ring(trimesh)
-    kN = mean_curvature(vertices, one_ring)
-    k = scalar_curvature(trimesh, kN)
-    mk = np.mean(k)
-    print("mean curvature =", mk)
 
-    R = 50
-    pts = []
-    pts += [[np.pi / 4, 2 * np.pi / 6]]
-    pts += [[-3 * np.pi / 4, 0]]
-    pts += [[-np.pi / 4, -np.pi / 6]]
-    ampl = np.array([-15, -10, 18]) * abs(mk)
-    rad = [100.0, 150.0, 100.0]
+    dt = 1.0
+    n_iter = 1
+    k = scalar_curvature(trimesh, mean_curvature(vertices, one_ring))
+    k_min = k.min()
+    k_max = k.max()
 
-    rho = np.zeros(nv, dtype=np.float64)
-    for i, pt in enumerate(pts):
-        pt_cart = np.array(
-            [
-                R * np.cos(pt[1]) * np.cos(pt[0]),
-                R * np.cos(pt[1]) * np.sin(pt[0]),
-                R * np.sin(pt[1]),
-            ]
-        )
-        dist = norm(vertices - pt_cart, axis=1)
-        rho += ampl[i] * np.exp(-(dist**2) / rad[i])
+    for it in range(n_iter):
+        flow(vertices, -dt * k, one_ring)
+        k = scalar_curvature(trimesh, mean_curvature(vertices, one_ring))
 
-    rho_fc = vertex2face(trimesh, rho)
-    rho_norm = (rho_fc - rho_fc.min()) / np.ptp(rho_fc)
-    cm = plt.cm.plasma(rho_norm)
-
-    transform(trimesh, rho)
-
+    cm = to_cmap(vertex2face(trimesh, k), k_min, k_max)
     fig, ax = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection="3d"))
 
     triangles = vertices[trimesh.faces]

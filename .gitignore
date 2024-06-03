@@ -4,11 +4,17 @@ __pycache__
 *.stl
 *.FCStd
 *.egg
+*.gif
+*.png
+*.gif
+!animation_crop.gif
+!ballfig.png
 build
 *.pdf
 *.ply
 try
 !sphere.ply
 !knobitle.ply
+!deform.ply
 *.so
 test.py

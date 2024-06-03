@@ -38,8 +38,9 @@ pts = []
 pts += [[np.pi / 4, 2 * np.pi / 6]]
 pts += [[-3 * np.pi / 4, 0]]
 pts += [[-np.pi / 4, -np.pi / 6]]
-ampl = np.array([-15, -10, 18]) * abs(mk)
-rad = [100.0, 150.0, 100.0]
+pts += [[np.pi / 4, -np.pi / 6]]
+ampl = np.array([-20, -18, 18, -15]) * abs(mk)
+rad = [90.0, 50.0, 70.0, 100]
 
 rho = np.zeros(nv, dtype=np.float64)
 for i, pt in enumerate(pts):
@@ -114,7 +115,7 @@ for i, ax in enumerate(axs):
     ax.set_axis_off()
 
 # trimesh.visual.face_colors = cm
-# trimesh.export("sphananaHQ.ply")
+# trimesh.export("deform.ply")
 fig.tight_layout(pad=0)
 # fig.savefig("ballfig.png")
 plt.show()
