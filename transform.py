@@ -19,33 +19,43 @@ from operators import (
 
 def get_oriented_one_ring(trimesh):
     nv = trimesh.vertices.shape[0]
-    vertices = np.zeros((nv, 3), dtype=np.float64)
-    vertices[:] = trimesh.vertices
+    # vertices = np.zeros((nv, 3), dtype=np.float64)
+    vertices = trimesh.vertices
 
     g = nx.from_edgelist(trimesh.edges_unique)
     one_ring = [list(g[i].keys()) for i in range(nv)]
+    print(f"{len(one_ring) = }")
 
     n_entries = nv
-    for i in one_ring:
-        n_entries += len(i)
-    n_entries *= 16
+    n_entries += sum(map(len, one_ring))
+    one_ordered = np.zeros(n_entries, dtype=np.int64)
 
-    one_ordered = [
-        [len(ring)] + nx.cycle_basis(g.subgraph(ring))[0] for ring in one_ring
-    ]
+    k = 0
+    for i, ring in enumerate(one_ring):
+        one_ordered[k] = len(ring)
+        k += 1
+        cycle = nx.cycle_basis(g.subgraph(ring))
+        if len(cycle) != 1:
+            raise ValueError(f"vertex {i} has more than one cycle in its one-ring.")
+        for ring_vert_idx in cycle[0]:
+            one_ordered[k] = ring_vert_idx
+            k += 1
 
-    one_ordered = np.array([x for r in one_ordered for x in r])
+    # one_ordered = [
+    #     [len(ring)] + nx.cycle_basis(g.subgraph(ring))[0] for ring in one_ring
+    # ]
+
+    # one_ordered = np.array([x for r in one_ordered for x in r])
 
     # the values must be extracted before use, otherwise we get trash
     normals = np.zeros((nv, 3), dtype=np.float64)
-    normals[:] = trimesh.vertex_normals
+    normals[:] = trimesh.vertex_normals[:]
 
     set_rings_order(one_ordered, normals, vertices)
     return one_ordered
 
 
 def scalar_curvature(trimesh, kN):
-    assert kN.shape[0] == trimesh.vertices.shape[0]
     return np.sum(trimesh.vertex_normals * kN, axis=1)
 
 
@@ -116,9 +126,6 @@ def flow(vertices, rho, one_ring):
     L = sparse.csc_array((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
 
     new_vertices = sparse.linalg.spsolve(L, div_e)
-    # residual = norm(L @ new_vertices - div_e)
-    # if residual > 1e-10:
-    #     print(f"WARNING : {residual =}")
 
     new_vertices.shape = (nv - 2, 4)
     vertices[:i1, :] = new_vertices[:i1, 1:]

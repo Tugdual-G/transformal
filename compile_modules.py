@@ -54,10 +54,17 @@ def set_rings_order(one_ring, normals, vertices):
                 one_ring[i0 + j + 1] = one_ring[i0 + ring_length - j]
                 one_ring[i0 + ring_length - j] = or_tmp
         # oring += [one_ring[i0 : i0 + one_ring[i0] + 1].tolist()]
+        itmp = i0
         i0 += one_ring[i0] + 1
         vi += 1
 
-    assert vi == normals.shape[0]
+    if vi != normals.shape[0]:
+        raise ValueError(
+            "Warning wrong number of vertex read in set_rings_order: vi = ",
+            vi,
+            ", normals.shape =",
+            normals.shape,
+        )
 
 
 @cc.export(

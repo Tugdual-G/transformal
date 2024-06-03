@@ -36,6 +36,7 @@ vertices = trimesh.vertices
 nv = vertices.shape[0]
 nf = trimesh.faces.shape[0]
 print("number of vertices", nv)
+print(f"{trimesh.vertex_normals.shape}")
 
 centerofmass = np.mean(vertices, axis=0)
 vertices[:] = vertices - centerofmass
