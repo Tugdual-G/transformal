@@ -24,4 +24,5 @@ curvature_example.py
 !knobitle.ply
 !deform.ply
 *.so
+*.npz
 test.py

@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-from enum import verify
 import numpy as np
 from numpy.linalg import norm
 import trimesh
 import networkx as nx
 from scipy import sparse
-from scipy.linalg import issymmetric
 from operators import (
     dirac_op,
     set_rings_order,
-    mul_quatern,
     edges_div,
     quaternionic_laplacian_matrix,
     mean_curvature,
@@ -60,31 +57,54 @@ def scalar_curvature(mesh: trimesh.Trimesh, kN: np.ndarray) -> np.ndarray:
     return np.sum(mesh.vertex_normals * kN, axis=1)
 
 
-def eigensolve(M: sparse.csc_matrix, v: np.ndarray):
+def integrate(mesh: trimesh.Trimesh, f: np.ndarray):
+    S = np.mean(f[mesh.faces], axis=1) * mesh.area_faces
+    return np.sum(S)
+
+
+def orthonormalize(mesh: trimesh.Trimesh, vects: list):
+    for i, v in enumerate(vects):
+        for j in range(i):
+            v[:] -= integrate(mesh, v * vects[j]) * vects[j]
+        v[:] /= np.sqrt(integrate(mesh, v * v))
+
+
+def apply_constraints(mesh: trimesh.Trimesh, rho: np.ndarray):
+    constraints = [
+        np.ones(mesh.vertices.shape[0]),
+        mesh.vertex_normals[:, 0].copy(),
+        mesh.vertex_normals[:, 1].copy(),
+        mesh.vertex_normals[:, 2].copy(),
+    ]
+    orthonormalize(mesh, constraints)
+    for constraint in constraints:
+        rho[:] -= integrate(mesh, rho * constraint) * constraint
+
+
+def eigensolve(M: sparse.csc_array, v: np.ndarray):
     nv = v.shape[0]
     v[:] = 0
     v[::4] = 1.0
-    # eigval, eigvect= sparse.linalg.eigsh(M, k=1, sigma=0, which='LM', tol=0)
-    # v = eigvect[:, 0]
-    for i in range(4):
-        v[:] = sparse.linalg.spsolve(M, v)
-        v.shape = (nv // 4, 4)
-        v /= np.sqrt(np.sum(v**2))
-        v.shape = (nv,)
+    LU = sparse.linalg.splu(M)
+    for i in range(5):
+        v[:] = LU.solve(v)
+        v[:] /= norm(v)
 
-    # v_res = M @ v
-    # v_res.shape = (nv // 4, 4)
-    # v_res /= np.sqrt(np.sum(v_res**2))
-    # v_res.shape = (nv,)
-    # print("eigen vector residual inf norm :", norm(v_res - v, ord=np.inf))
+    # print(f"eigenvalue : {norm(M@v)/norm(v) = }")
     v.shape = (nv // 4, 4)
-    v /= np.mean(np.sqrt(np.sum(v**2, axis=1)))
+    v[:] /= np.mean(np.sqrt(np.sum(v**2, axis=1)))
     v.shape = (nv,)
 
 
-# def symetric_delete2(i_del, L):
-#     L_wp = np.delete(L,i_del, axis=0)
-#     return np.delete(L_wp, i_del, axis=1)
+def eigensolve_eigsh(M: sparse.csc_array, v: np.ndarray):
+    nv = v.shape[0]
+    v[:] = 0.0
+    v[::4] = 1.0
+    _, eigvec = sparse.linalg.eigsh(M, k=3, sigma=0.0, v0=v)
+    v[:] = eigvec[:, np.argmax(norm(eigvec - v[:, np.newaxis], axis=0))]
+    v.shape = (nv // 4, 4)
+    v[:] /= np.mean(np.sqrt(np.sum(v**2, axis=1)))
+    v.shape = (nv,)
 
 
 def flow(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
@@ -92,10 +112,9 @@ def flow(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
 
     # building the operator (D - rho)
     d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
-    X = sparse.csc_matrix((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
-
+    X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
     # finding the eigenvector lambd for the minimum eigenvalue
-    lambd = np.zeros(4 * nv)
+    lambd = np.zeros(4 * nv, dtype=np.float64)
     eigensolve(X, lambd)
 
     # Applying the transform defined by lambd on the edge vectors
@@ -109,7 +128,7 @@ def flow(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
     # Building the laplacian matrix to solve L x = div_e
     idx_i, idx_j, data = quaternionic_laplacian_matrix(vertices, one_ring)
     # csc for column slicing
-    L = sparse.csc_matrix((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
+    L = sparse.csc_array((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
 
     # Applying constraint to the system
     # TODO make it work for bounded shapes
@@ -124,7 +143,7 @@ def flow(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
     div_e = np.delete(div_e, i_del, axis=0)
 
     # Rebuild the csr matrix
-    L = sparse.csc_matrix((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
+    L = sparse.csc_array((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
 
     new_vertices = sparse.linalg.spsolve(L, div_e)
 
@@ -142,7 +161,7 @@ def transform(mesh: trimesh.Trimesh, rho: np.ndarray, one_ring: np.ndarray):
 
     # building the operator (D - rho)
     d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
-    X = sparse.csc_matrix((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
+    X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
     print(f"{np.abs(X-X.T).max() = }")
 
     # finding the eigenvector lambd for the minimum eigenvalue
@@ -160,7 +179,7 @@ def transform(mesh: trimesh.Trimesh, rho: np.ndarray, one_ring: np.ndarray):
     # Building the laplacian matrix to solve L x = div_e
     idx_i, idx_j, data = quaternionic_laplacian_matrix(vertices, one_ring)
     # csc for row slicing
-    L = sparse.csc_matrix((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
+    L = sparse.csc_array((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
 
     # Applying constraint to the system
     # TODO make it work for bounded shapes
@@ -175,7 +194,7 @@ def transform(mesh: trimesh.Trimesh, rho: np.ndarray, one_ring: np.ndarray):
     div_e = np.delete(div_e, i_del, axis=0)
 
     # Rebuild the csr matrix
-    L = sparse.csc_matrix((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
+    L = sparse.csc_array((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
     print(f"{np.abs(L-L.T).max() = }")
 
     # norm_L = norm(L)
