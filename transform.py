@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 from enum import verify
 import numpy as np
 from numpy.linalg import norm
@@ -17,12 +18,12 @@ from operators import (
 )
 
 
-def get_oriented_one_ring(trimesh):
-    nv = trimesh.vertices.shape[0]
+def get_oriented_one_ring(mesh: trimesh.Trimesh) -> np.ndarray:
+    nv = mesh.vertices.shape[0]
     # vertices = np.zeros((nv, 3), dtype=np.float64)
-    vertices = trimesh.vertices
+    vertices = mesh.vertices
 
-    g = nx.from_edgelist(trimesh.edges_unique)
+    g = nx.from_edgelist(mesh.edges_unique)
     one_ring = [list(g[i].keys()) for i in range(nv)]
     print(f"{len(one_ring) = }")
 
@@ -49,17 +50,17 @@ def get_oriented_one_ring(trimesh):
 
     # the values must be extracted before use, otherwise we get trash
     normals = np.zeros((nv, 3), dtype=np.float64)
-    normals[:] = trimesh.vertex_normals[:]
+    normals[:] = mesh.vertex_normals[:]
 
     set_rings_order(one_ordered, normals, vertices)
     return one_ordered
 
 
-def scalar_curvature(trimesh, kN):
-    return np.sum(trimesh.vertex_normals * kN, axis=1)
+def scalar_curvature(mesh: trimesh.Trimesh, kN: np.ndarray) -> np.ndarray:
+    return np.sum(mesh.vertex_normals * kN, axis=1)
 
 
-def eigensolve(M, v):
+def eigensolve(M: sparse.csc_matrix, v: np.ndarray):
     nv = v.shape[0]
     v[:] = 0
     v[::4] = 1.0
@@ -86,12 +87,12 @@ def eigensolve(M, v):
 #     return np.delete(L_wp, i_del, axis=1)
 
 
-def flow(vertices, rho, one_ring):
+def flow(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
     nv = vertices.shape[0]
 
     # building the operator (D - rho)
     d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
-    X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
+    X = sparse.csc_matrix((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
 
     # finding the eigenvector lambd for the minimum eigenvalue
     lambd = np.zeros(4 * nv)
@@ -107,8 +108,8 @@ def flow(vertices, rho, one_ring):
 
     # Building the laplacian matrix to solve L x = div_e
     idx_i, idx_j, data = quaternionic_laplacian_matrix(vertices, one_ring)
-    # csc for row slicing
-    L = sparse.csc_array((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
+    # csc for column slicing
+    L = sparse.csc_matrix((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
 
     # Applying constraint to the system
     # TODO make it work for bounded shapes
@@ -123,7 +124,7 @@ def flow(vertices, rho, one_ring):
     div_e = np.delete(div_e, i_del, axis=0)
 
     # Rebuild the csr matrix
-    L = sparse.csc_array((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
+    L = sparse.csc_matrix((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
 
     new_vertices = sparse.linalg.spsolve(L, div_e)
 
@@ -135,14 +136,13 @@ def flow(vertices, rho, one_ring):
     vertices[i2 + 1 :, :] = new_vertices[i2 - 1 :, 1:]
 
 
-def transform(trimesh, rho):
-    vertices = trimesh.vertices
+def transform(mesh: trimesh.Trimesh, rho: np.ndarray, one_ring: np.ndarray):
+    vertices = mesh.vertices
     nv = vertices.shape[0]
-    one_ring = get_oriented_one_ring(trimesh)
 
     # building the operator (D - rho)
     d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
-    X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
+    X = sparse.csc_matrix((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
     print(f"{np.abs(X-X.T).max() = }")
 
     # finding the eigenvector lambd for the minimum eigenvalue
@@ -160,7 +160,7 @@ def transform(trimesh, rho):
     # Building the laplacian matrix to solve L x = div_e
     idx_i, idx_j, data = quaternionic_laplacian_matrix(vertices, one_ring)
     # csc for row slicing
-    L = sparse.csc_array((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
+    L = sparse.csc_matrix((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
 
     # Applying constraint to the system
     # TODO make it work for bounded shapes
@@ -175,7 +175,7 @@ def transform(trimesh, rho):
     div_e = np.delete(div_e, i_del, axis=0)
 
     # Rebuild the csr matrix
-    L = sparse.csc_array((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
+    L = sparse.csc_matrix((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
     print(f"{np.abs(L-L.T).max() = }")
 
     # norm_L = norm(L)
@@ -208,9 +208,9 @@ if __name__ == "__main__":
             ax.plot(normalsegm[0, 0], normalsegm[0, 1], normalsegm[0, 2], color + "o")
             ax.plot(normalsegm[:, 0], normalsegm[:, 1], normalsegm[:, 2], color)
 
-    def vertex2face(trimesh, vval):
-        assert vval.shape[0] == trimesh.vertices.shape[0]
-        return np.mean(vval[trimesh.faces], axis=1)
+    def vertex2face(mesh, vval):
+        assert vval.shape[0] == mesh.vertices.shape[0]
+        return np.mean(vval[mesh.faces], axis=1)
 
     def to_cmap(v, v_min=None, v_max=None):
         if not v_min:
@@ -220,29 +220,29 @@ if __name__ == "__main__":
             v_max = v.max()
         return plt.cm.plasma((v - v_min) / (v_max - v_min))
 
-    # trimesh = trimesh.Trimesh(vertices=[[0, 0, 0], [1, 0, 0], [0, 1, 0],[0,0,1]],
+    # mesh = mesh.mesh(vertices=[[0, 0, 0], [1, 0, 0], [0, 1, 0],[0,0,1]],
     #                     faces=[[0, 1, 3],[1,2,3],[2,0,3],[0,2,1]])
-    trimesh = trimesh.load("meshes/deform.ply")
-    vertices = trimesh.vertices
+    mesh = trimesh.load("meshes/deform.ply")
+    vertices = mesh.vertices
     nv = vertices.shape[0]
     print("number of vertices", nv)
 
-    one_ring = get_oriented_one_ring(trimesh)
+    one_ring = get_oriented_one_ring(mesh)
 
     dt = 1.0
     n_iter = 1
-    k = scalar_curvature(trimesh, mean_curvature(vertices, one_ring))
+    k = scalar_curvature(mesh, mean_curvature(vertices, one_ring))
     k_min = k.min()
     k_max = k.max()
 
     for it in range(n_iter):
         flow(vertices, -dt * k, one_ring)
-        k = scalar_curvature(trimesh, mean_curvature(vertices, one_ring))
+        k = scalar_curvature(mesh, mean_curvature(vertices, one_ring))
 
-    cm = to_cmap(vertex2face(trimesh, k), k_min, k_max)
+    cm = to_cmap(vertex2face(mesh, k), k_min, k_max)
     fig, ax = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection="3d"))
 
-    triangles = vertices[trimesh.faces]
+    triangles = vertices[mesh.faces]
     light = LightSource(90, 100)
     pc = art3d.Poly3DCollection(
         triangles,
@@ -253,7 +253,7 @@ if __name__ == "__main__":
         lightsource=light,
     )
     ax.add_collection(pc)
-    # plot_normals(ax, face_center, trimesh.face_normals)
+    # plot_normals(ax, face_center, mesh.face_normals)
     xlim = (vertices[:, 0].min(), vertices[:, 0].max())
     ylim = (vertices[:, 1].min(), vertices[:, 1].max())
     zlim = (vertices[:, 2].min(), vertices[:, 2].max())

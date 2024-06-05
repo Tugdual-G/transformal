@@ -9,6 +9,12 @@ __pycache__
 *.gif
 !animation_crop.gif
 !ballfig.png
+*.py
+!compile_modules.py
+!curvature_example.py
+!flow_example.py
+!transform_example.py
+!transform.py
 build
 *.pdf
 *.ply

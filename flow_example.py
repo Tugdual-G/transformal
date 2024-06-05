@@ -31,42 +31,44 @@ def to_cmap(v, v_min=None, v_max=None):
     return plt.cm.plasma((v - v_min) / (v_max - v_min))
 
 
-trimesh = trimesh.load("meshes/deform.ply")
-vertices = trimesh.vertices
+# Type hint to supress warnings of the editor since load can
+# return different subclass of geometry
+mesh: trimesh.Trimesh = trimesh.load("meshes/deform.ply")
+vertices = mesh.vertices
 nv = vertices.shape[0]
-nf = trimesh.faces.shape[0]
+nf = mesh.faces.shape[0]
 print("number of vertices", nv)
 
 # center the object
 centerofmass = np.mean(vertices, axis=0)
 vertices[:] = vertices - centerofmass
-# vol0 = trimesh.volume
+# vol0 = mesh.volume
 
 # The one ring is needed for many subsequent routines
-one_ring = get_oriented_one_ring(trimesh)
+one_ring = get_oriented_one_ring(mesh)
 
 # Defines the plot
 fig, ax = plt.subplots(1, 1, figsize=(8, 7), subplot_kw=dict(projection="3d"))
 ax.axis("off")
 
 # Use cuvature to define the coloration of the mesh's faces
-k = scalar_curvature(trimesh, mean_curvature(vertices, one_ring))
+k = scalar_curvature(mesh, mean_curvature(vertices, one_ring))
 k_min = k.min()
 k_max = k.max()
 # Define the colors of the mesh
-cm = to_cmap(vertex2face(trimesh, k), k_min, k_max)
+cm = to_cmap(vertex2face(mesh, k), k_min, k_max)
 
 # Defines illumination
 light = LightSource(90, 100)
 fraction = 0.9
-intensity = light.shade_normals(trimesh.face_normals, fraction=fraction)
+intensity = light.shade_normals(mesh.face_normals, fraction=fraction)
 intensity.shape = (nf, 1, 1)
 cm.shape = (nf, 1, 4)
 cm = light.blend_overlay(cm, intensity=intensity)
 cm.shape = (nf, 4)
 
 # creates the poligon collection (mesh faces)
-triangles = vertices[trimesh.faces]
+triangles = vertices[mesh.faces]
 polycol = art3d.Poly3DCollection(
     triangles,
     facecolors=cm,
@@ -93,18 +95,18 @@ def animate(i):
     """Animation funcion"""
     dt = 0.5
     if i > 5:
-        k = scalar_curvature(trimesh, mean_curvature(vertices, one_ring))
+        k = scalar_curvature(mesh, mean_curvature(vertices, one_ring))
         flow(vertices, -dt * k, one_ring)
         centerofmass = np.mean(vertices, axis=0)
         vertices[:] = vertices - centerofmass
-        cm = to_cmap(vertex2face(trimesh, k), k_min, k_max)
-        intensity = light.shade_normals(trimesh.face_normals, fraction=fraction)
+        cm = to_cmap(vertex2face(mesh, k), k_min, k_max)
+        intensity = light.shade_normals(mesh.face_normals, fraction=fraction)
         intensity.shape = (nf, 1, 1)
         cm.shape = (nf, 1, 4)
         cm = light.blend_overlay(cm, intensity=intensity)
         cm.shape = (nf, 4)
         polycol.set_facecolor(cm)
-        polycol.set_verts(vertices[trimesh.faces])
+        polycol.set_verts(vertices[mesh.faces])
         return (polycol,)
 
 

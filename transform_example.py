@@ -20,15 +20,18 @@ def vertex2face(trimesh, vval):
     return np.mean(vval[trimesh.faces], axis=1)
 
 
-trimesh = trimesh.load("meshes/sphere.ply")
-vertices = trimesh.vertices
+# Type hint to supress warnings of the editor since load can
+# return different subclass of geometry
+mesh: trimesh.Trimesh = trimesh.load("meshes/sphere.ply")
+
+vertices = mesh.vertices
 nv = vertices.shape[0]
 print("number of vertices", nv)
 
 
-one_ring = get_oriented_one_ring(trimesh)
+one_ring = get_oriented_one_ring(mesh)
 kN = mean_curvature(vertices, one_ring)
-k = scalar_curvature(trimesh, kN)
+k = scalar_curvature(mesh, kN)
 mk = np.mean(k)
 print("mean curvature =", mk)
 
@@ -55,7 +58,7 @@ for i, pt in enumerate(pts):
     rho += ampl[i] * np.exp(-(dist**2) / rad[i])
 
 
-rho_fc = vertex2face(trimesh, rho)
+rho_fc = vertex2face(mesh, rho)
 rho_norm = (rho_fc - rho_fc.min()) / np.ptp(rho_fc)
 cm = plt.cm.plasma(rho_norm)
 
@@ -63,7 +66,7 @@ fig, axs = plt.subplots(1, 2, figsize=(8, 4), subplot_kw=dict(projection="3d"))
 ax1, ax2 = axs
 
 
-triangles = vertices[trimesh.faces]
+triangles = vertices[mesh.faces]
 light = LightSource(90, 100)
 pc = art3d.Poly3DCollection(
     triangles,
@@ -74,21 +77,21 @@ pc = art3d.Poly3DCollection(
     lightsource=light,
 )
 ax1.add_collection(pc)
-# plot_normals(ax, face_center, trimesh.face_normals)
+# plot_normals(ax, face_center, mesh.face_normals)
 xlim = [(vertices[:, 0].min(), vertices[:, 0].max())]
 ylim = [(vertices[:, 1].min(), vertices[:, 1].max())]
 zlim = [(vertices[:, 2].min(), vertices[:, 2].max())]
 
-transform(trimesh, rho)
+transform(mesh, rho, one_ring)
 
 kN = mean_curvature(vertices, one_ring)
-k = scalar_curvature(trimesh, kN)
+k = scalar_curvature(mesh, kN)
 
-k_fc = vertex2face(trimesh, k)
+k_fc = vertex2face(mesh, k)
 k_norm = (k_fc - k_fc.min()) / np.ptp(k_fc)
 cm = plt.cm.plasma(k_norm)
 
-triangles = vertices[trimesh.faces]
+triangles = vertices[mesh.faces]
 pc = art3d.Poly3DCollection(
     triangles,
     facecolors=cm,
@@ -114,8 +117,8 @@ for i, ax in enumerate(axs):
     ax.set_box_aspect([1, 1, 1])
     ax.set_axis_off()
 
-# trimesh.visual.face_colors = cm
-# trimesh.export("deform.ply")
+# mesh.visual.face_colors = cm
+# mesh.export("deform.ply")
 fig.tight_layout(pad=0)
 # fig.savefig("ballfig.png")
 plt.show()
