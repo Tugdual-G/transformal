@@ -39,13 +39,6 @@ def get_oriented_one_ring(mesh: trimesh.Trimesh) -> np.ndarray:
             one_ordered[k] = ring_vert_idx
             k += 1
 
-    # one_ordered = [
-    #     [len(ring)] + nx.cycle_basis(g.subgraph(ring))[0] for ring in one_ring
-    # ]
-
-    # one_ordered = np.array([x for r in one_ordered for x in r])
-
-    # the values must be extracted before use, otherwise we get trash
     normals = np.zeros((nv, 3), dtype=np.float64)
     normals[:] = mesh.vertex_normals[:]
 

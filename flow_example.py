@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import art3d
 from matplotlib.colors import LightSource
 import matplotlib.animation as animation
-from transform import flow, scalar_curvature, get_oriented_one_ring
+from transform import flow, scalar_curvature, get_oriented_one_ring, apply_constraints
 
 
 def plot_normals(ax, vertices, normals, length=10, color="r"):
@@ -95,8 +95,9 @@ def animate(i):
     """Animation funcion"""
     dt = 0.5
     if i > 5:
-        k = scalar_curvature(mesh, mean_curvature(vertices, one_ring))
-        flow(vertices, -dt * k, one_ring)
+        rho = -dt*scalar_curvature(mesh, mean_curvature(vertices, one_ring))
+        # apply_constraints(mesh, rho)
+        flow(vertices, rho, one_ring)
         centerofmass = np.mean(vertices, axis=0)
         vertices[:] = vertices - centerofmass
         cm = to_cmap(vertex2face(mesh, k), k_min, k_max)

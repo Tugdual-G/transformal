@@ -4,7 +4,12 @@ from mpl_toolkits.mplot3d import art3d
 from matplotlib.colors import LightSource
 import trimesh
 import numpy as np
-from transform import transform, get_oriented_one_ring, scalar_curvature
+from transform import (
+    transform,
+    get_oriented_one_ring,
+    scalar_curvature,
+    apply_constraints,
+)
 from operators import mean_curvature
 
 
@@ -57,6 +62,7 @@ for i, pt in enumerate(pts):
     dist = np.linalg.norm(vertices - pt_cart, axis=1)
     rho += ampl[i] * np.exp(-(dist**2) / rad[i])
 
+apply_constraints(mesh, rho)
 
 rho_fc = vertex2face(mesh, rho)
 rho_norm = (rho_fc - rho_fc.min()) / np.ptp(rho_fc)
