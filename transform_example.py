@@ -9,6 +9,7 @@ from transform import (
     get_oriented_one_ring,
     scalar_curvature,
     apply_constraints,
+    integrate,
 )
 from operators import mean_curvature
 
@@ -37,7 +38,7 @@ print("number of vertices", nv)
 one_ring = get_oriented_one_ring(mesh)
 kN = mean_curvature(vertices, one_ring)
 k = scalar_curvature(mesh, kN)
-mk = np.mean(k)
+mk = integrate(mesh, k) / integrate(mesh, np.ones(nv))
 print("mean curvature =", mk)
 
 
@@ -47,8 +48,8 @@ pts += [[np.pi / 4, 2 * np.pi / 6]]
 pts += [[-3 * np.pi / 4, 0]]
 pts += [[-np.pi / 4, -np.pi / 6]]
 pts += [[np.pi / 4, -np.pi / 6]]
-ampl = np.array([-20, -18, 18, -15]) * abs(mk)
-rad = [90.0, 50.0, 70.0, 100]
+ampl = np.array([-18, -18, -18, -18]) * abs(mk)
+rad = [50.0, 50.0, 50.0, 50]
 
 rho = np.zeros(nv, dtype=np.float64)
 for i, pt in enumerate(pts):
@@ -62,12 +63,13 @@ for i, pt in enumerate(pts):
     dist = np.linalg.norm(vertices - pt_cart, axis=1)
     rho += ampl[i] * np.exp(-(dist**2) / rad[i])
 
+rho0 = rho.copy()
 apply_constraints(mesh, rho)
+print(f"{np.abs(rho0 - rho).max()/abs(mk) = }")
 
 rho_fc = vertex2face(mesh, rho)
 rho_norm = (rho_fc - rho_fc.min()) / np.ptp(rho_fc)
 cm = plt.cm.plasma(rho_norm)
-
 fig, axs = plt.subplots(1, 2, figsize=(8, 4), subplot_kw=dict(projection="3d"))
 ax1, ax2 = axs
 

@@ -95,8 +95,7 @@ def animate(i):
     """Animation funcion"""
     dt = 0.5
     if i > 5:
-        rho = -dt*scalar_curvature(mesh, mean_curvature(vertices, one_ring))
-        # apply_constraints(mesh, rho)
+        rho = -dt * scalar_curvature(mesh, mean_curvature(vertices, one_ring))
         flow(vertices, rho, one_ring)
         centerofmass = np.mean(vertices, axis=0)
         vertices[:] = vertices - centerofmass
