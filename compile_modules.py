@@ -386,16 +386,16 @@ def mean_curvature(vertices, one_ring):
             # area of the ring
             A = 0
             for j in range(ring_nv - 1):
-                A += norm(np.cross(edges_vect[j], edges_vect[(j + 1) % ring_nv]))
+                A += norm(np.cross(edges_vect[j], edges_vect[(j + 1)]))
 
             for j in range(ring_nv):
-                e1 = edges_vect[(j - 1) % ring_nv].copy()
+                e1 = edges_vect[(j - 1) % ring_nv]
                 o1 = ring_vert[j] - ring_vert[(j - 1) % ring_nv]
                 cos1 = np.dot(e1, o1)
                 sin1 = np.linalg.norm(np.cross(o1, e1))
                 cot1 = cos1 / sin1
 
-                e2 = edges_vect[(j + 1) % ring_nv].copy()
+                e2 = edges_vect[(j + 1) % ring_nv]
                 o2 = ring_vert[j] - ring_vert[(j + 1) % ring_nv]
                 cos2 = np.dot(e2, o2)
                 sin2 = np.linalg.norm(np.cross(e2, o2))
