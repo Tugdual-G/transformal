@@ -1,10 +1,15 @@
 ![example of flow](animation_crop.gif)
+# Basic conformal transformation python module  
 
-Basic conformal transformation script using 
-_CRANE, Keenan, PINKALL, Ulrich, and SCHRÖDER, Peter. Spin transformations of discrete surfaces. ACM SCRUFF 2011 papers, 2011, p. 1-10._
+The module provides methods to find the nearest conformal transformation for a given mean curvature change.
+A curvature flow can be applied such as shown in the script *flow_example.py* .
 
-It is possible to apply a curvature flow, such as shown in the script *flow_example.py* .
-## Dependencies
+## References
+CRANE, Keenan, PINKALL, Ulrich, and SCHRÖDER, Peter. Spin transformations of discrete surfaces. ACM SCRUFF 2011 papers, 2011, p. 1-10.
+
+CRANE, Keenan, PINKALL, Ulrich, et SCHRÖDER, Peter. Robust fairing via conformal curvature flow. ACM Transactions on Graphics (TOG), 2013, vol. 32, no 4, p. 1-10.
+
+## Requirements
 - matplotlib
 - networkx
 - numba
