@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
+"""
+TODO
+"""
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import art3d
 from matplotlib.colors import LightSource
 import trimesh
 import numpy as np
-from transform import (
+from transformal.transform import (
     transform,
     get_oriented_one_ring,
     scalar_curvature,
     apply_constraints,
     integrate,
 )
-from operators import mean_curvature
 
-
-def plot_normals(ax, vertices, normals, length=10, color="r"):
-    for i in range(normals.shape[0]):
-        normalsegm = np.stack((vertices[i], vertices[i, :] + length * normals[i]))
-        ax.plot(normalsegm[0, 0], normalsegm[0, 1], normalsegm[0, 2], color + "o")
-        ax.plot(normalsegm[:, 0], normalsegm[:, 1], normalsegm[:, 2], color)
+from transformal.operators import mean_curvature
 
 
 def vertex2face(trimesh, vval):

@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
+"""
+This module define the higher level functions:
+The most relevant ones are,
+
+    flow()       apply fairing via curvature flow
+
+    transform()  find the nearest conformal transform
+
+"""
 from __future__ import annotations
 import numpy as np
 from numpy.linalg import norm
 import trimesh
 import networkx as nx
 from scipy import sparse
-from operators import (
+from transformal.operators import (
     dirac_op,
     set_rings_order,
     edges_div,
@@ -155,7 +164,7 @@ def transform(mesh: trimesh.Trimesh, rho: np.ndarray, one_ring: np.ndarray):
     # building the operator (D - rho)
     d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
     X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
-    print(f"{np.abs(X-X.T).max() = }")
+    # print(f"{np.abs(X-X.T).max() = }")
 
     # finding the eigenvector lambd for the minimum eigenvalue
     lambd = np.zeros(4 * nv)

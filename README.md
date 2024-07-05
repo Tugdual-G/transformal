@@ -5,11 +5,11 @@ The module provides methods to find the nearest conformal transformation of a su
 Curvature flow/fairing can be applied, such as shown in the script *flow_example.py* .
 
 ## References
-The method is really well explained in the two papers below,
+The method applied here is really well explained in the two papers below,
 
 CRANE, Keenan, PINKALL, Ulrich, and SCHRÖDER, Peter. Spin transformations of discrete surfaces. ACM SCRUFF 2011 papers, 2011, p. 1-10.
 
-CRANE, Keenan, PINKALL, Ulrich, et SCHRÖDER, Peter. Robust fairing via conformal curvature flow. ACM Transactions on Graphics (TOG), 2013, vol. 32, no 4, p. 1-10.
+CRANE, Keenan, PINKALL, Ulrich, and SCHRÖDER, Peter. Robust fairing via conformal curvature flow. ACM Transactions on Graphics (TOG), 2013, vol. 32, no 4, p. 1-10.
 
 ## Presentation
 ### Conformal transformations
@@ -28,15 +28,23 @@ Then the vertices position can be computed using the transformed tangent vectors
 ### Eigensolver
 The Dirac operator is computed over the mesh and stored as a compressed sparse column matrix.
 The eigensolver use a LU decomposition of $D-\rho$ and the iteration of a linear solver to find the eigenvector corresponding to the smallest amplitude eigenvalue :
+
 ```py
 while norm(residual) > tolerance :
     eigenvector = solve_LU(L, U, eigenvector) # solve the linear equation LU x = eigenvector
-    eigenvector /= norm(eigenvector)
-    residual = (LU @ eigenvector)/eigenvalue - eigenvector 
+    eigenvector /= norm(eigenvector) # ensure the vector does not grow or shrink to much
 ```
 
 This process is the main bottleneck of the code, and could be improved by implementing a solver using the quaternionic multiplication operator rather than traditional multiplication.
 Implementing a real quaternionic solver would reduce the amount of memory transaction, since for now, quaternions are represented by 4x4 matrix to work with traditional solvers. 
+
+Otherwise, a matrix-free methods such as LOBPCG could be used... with a quaternionic matrix.
+
+__Stability:__
+
+When the mesh's triangles areas gets smaller, the eigenvalue problem becomes ill-conditioned. 
+However, the iteration method seems to withstand this problem pretty well in comparison to other algorithms.
+
 
 ### Finding vertices positions
 After applying the transform to the tangent vectors of the mesh (the edges of the mesh in practice),
@@ -47,6 +55,7 @@ where, $x$ stands for the vertices position and $e$ for the tangents.
 Since we operate on closed surfaces, the system of equation is singular.
 To solve this issue we simply choose two vertices to constrain the position and orientation of our surface.
 This result in a fully constrained problem, which is solved using sparse matrix representation.
+
 ## Implementation
 This project use a procedural style which seem better suited for these kinds of problems. 
 

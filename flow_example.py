@@ -1,31 +1,33 @@
 #!/usr/bin/env python3
+
+"""
+This script show the real-time fairing of a closed mesh.
+A small time step is taken in order to keep the animation smooth,
+but larger time step works too.
+
+"""
 import numpy as np
 from functools import partial
 import trimesh
-from operators import mean_curvature
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import art3d
 from matplotlib.colors import LightSource
 import matplotlib.animation as animation
-from transform import flow, scalar_curvature, get_oriented_one_ring, apply_constraints
 
-
-def plot_normals(ax, vertices, normals, length=10, color="r"):
-    for i in range(normals.shape[0]):
-        normalsegm = np.stack((vertices[i], vertices[i, :] + length * normals[i]))
-        ax.plot(normalsegm[0, 0], normalsegm[0, 1], normalsegm[0, 2], color + "o")
-        ax.plot(normalsegm[:, 0], normalsegm[:, 1], normalsegm[:, 2], color)
+from transformal.operators import mean_curvature
+from transformal.transform import flow, scalar_curvature, get_oriented_one_ring
 
 
 def vertex2face(trimesh, vval):
+    """ Interpolate vertex value to the face's center."""
     assert vval.shape[0] == trimesh.vertices.shape[0]
     return np.mean(vval[trimesh.faces], axis=1)
 
 
 def to_cmap(v, v_min=None, v_max=None):
+    """ Returns rgba values."""
     if v_min is None:
         v_min = v.min()
-
     if v_max is None:
         v_max = v.max()
     return plt.cm.plasma((v - v_min) / (v_max - v_min))
@@ -42,7 +44,6 @@ print("number of vertices", nv)
 # center the object
 centerofmass = np.mean(vertices, axis=0)
 vertices[:] = vertices - centerofmass
-# vol0 = mesh.volume
 
 # The one ring is needed for many subsequent routines
 one_ring = get_oriented_one_ring(mesh)
