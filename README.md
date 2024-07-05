@@ -19,14 +19,14 @@ This propriety is desirable when one wants to fair a mesh without altering the m
 
 ### Dirac operator and quaternionic transform
 These transformations can be determined using the eigenvectors of the Dirac operator.
-The Dirac operator, $D$, is defined as $D^2 = \Delta $ , $\Delta$ being in our case the Laplace-Beltrami operator.
+The Dirac operator, $D$, is defined as $D^2 = \Delta$ , $\Delta$ being in our case the Laplace-Beltrami operator.
 The components of the eigenvectors are quaternions defining the transformation (scaling and rotationn) which is applied to the tangent vectors of the surface.
 Then the vertices position can be computed using the transformed tangent vectors (up to a constant position).
 
-## Computation methods/Implementation
+## Computation methods
 ### Eigensolver
 The Dirac operator is computed over the mesh and stored as a compressed sparse column matrix.
-The eigensolver use a LU decomposition and the iteration of a linear solver to find the eigenvector corresponding to the smallest amplitude eigenvalue.
+The eigensolver use a LU decomposition and the iteration of a linear solver to find the eigenvector corresponding to the smallest amplitude eigenvalue :
 ```py
 while norm(residual) > tolerance :
     eigenvector = solve_LU(L, U, eigenvector) # solve the linear equation LU x = eigenvector
@@ -39,14 +39,15 @@ Implementing a real quaternionic solver would reduce the amount of memory transa
 
 ### finding vertices position
 After applying the transform to the tangent vectors of the mesh (the edges of the mesh in practice),
-we solve the following equation for x, 
-$$ \Delta x = \nabla \dot \e $$
-where, $x$ stands for the vertices position and e for the edges.
+we solve the following equation for $x$, 
+$$\Delta x = \nabla \cdot e$$
+where, $x$ stands for the vertices position and $e$ for the tangents.
 
 Since we operate on closed surfaces, the system of equation is singular.
 To solve this issue we simply choose two vertices to constrain the position and orientation of our surface.
 This result in a fully constrained problem, which is solved using sparse matrix representation.
-
+## Implementation
+This project use a procedural style which seem better suited for these kind of problems. 
 
 ## Requirements
 - matplotlib
