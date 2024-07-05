@@ -18,20 +18,21 @@ For example if two intersecting lines are drawn onto a surface, those lines will
 This propriety is desirable when one wants to fair a mesh without altering the mesh quality.
 
 ### Dirac operator and quaternionic transform
-These transformations can be determined using the eigenvectors of the Dirac operator.
-The Dirac operator, $D$, is defined as $D^2 = \Delta$ , $\Delta$ being in our case the Laplace-Beltrami operator.
+These transformations can be determined using the eigenvectors of the Dirac operator, or more preciselly,
+using the eigen vectors of $D-\rho$ with $\rho$ the given curvature change over the surface.
+The Dirac operator, $D$, is defined as $D^2 = \Delta$ , with $\Delta$ being in our case the Laplace-Beltrami operator.
 The components of the eigenvectors are quaternions defining the transformation (scaling and rotationn) which is applied to the tangent vectors of the surface.
 Then the vertices position can be computed using the transformed tangent vectors (up to a constant position).
 
 ## Computation methods
 ### Eigensolver
 The Dirac operator is computed over the mesh and stored as a compressed sparse column matrix.
-The eigensolver use a LU decomposition and the iteration of a linear solver to find the eigenvector corresponding to the smallest amplitude eigenvalue :
+The eigensolver use a LU decomposition of $D-\rho$ and the iteration of a linear solver to find the eigenvector corresponding to the smallest amplitude eigenvalue :
 ```py
 while norm(residual) > tolerance :
     eigenvector = solve_LU(L, U, eigenvector) # solve the linear equation LU x = eigenvector
     eigenvector /= norm(eigenvector)
-    residual = (A @ eigenvector)/eigenvalue - eigenvector 
+    residual = (LU @ eigenvector)/eigenvalue - eigenvector 
 ```
 
 This process is the main bottleneck of the code, and could be improved by implementing a solver using the quaternionic multiplication operator rather than traditional multiplication.
