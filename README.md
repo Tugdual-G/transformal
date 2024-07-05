@@ -38,7 +38,7 @@ while norm(residual) > tolerance :
 This process is the main bottleneck of the code, and could be improved by implementing a solver using the quaternionic multiplication operator rather than traditional multiplication.
 Implementing a real quaternionic solver would reduce the amount of memory transaction, since for now, quaternions are represented by 4x4 matrix to work with traditional solvers. 
 
-### finding vertices position
+### Finding vertices positions
 After applying the transform to the tangent vectors of the mesh (the edges of the mesh in practice),
 we solve the following equation for $x$, 
 $$\Delta x = \nabla \cdot e$$
