@@ -10,7 +10,7 @@ __pycache__
 !animation_crop.gif
 !ballfig.png
 *.py
-!compile_modules.py
+!operators_core.py
 !curvature_example.py
 !flow_example.py
 !transform_example.py
