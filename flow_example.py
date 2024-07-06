@@ -15,17 +15,17 @@ from matplotlib.colors import LightSource
 import matplotlib.animation as animation
 
 from transformal.operators import mean_curvature
-from transformal.transform import flow, scalar_curvature, get_oriented_one_ring
+from transformal.transform import transform, scalar_curvature, get_oriented_one_ring
 
 
 def vertex2face(trimesh, vval):
-    """ Interpolate vertex value to the face's center."""
+    """Interpolate vertex value to the face's center."""
     assert vval.shape[0] == trimesh.vertices.shape[0]
     return np.mean(vval[trimesh.faces], axis=1)
 
 
 def to_cmap(v, v_min=None, v_max=None):
-    """ Returns rgba values."""
+    """Returns rgba values."""
     if v_min is None:
         v_min = v.min()
     if v_max is None:
@@ -97,9 +97,9 @@ def animate(i):
     dt = 0.5
     if i > 5:
         rho = -dt * scalar_curvature(mesh, mean_curvature(vertices, one_ring))
-        flow(vertices, rho, one_ring)
+        transform(vertices, rho, one_ring)
         centerofmass = np.mean(vertices, axis=0)
-        vertices[:] = vertices - centerofmass
+        vertices[:] = vertices - centerofmass  # keeps the mesh centered
         cm = to_cmap(vertex2face(mesh, k), k_min, k_max)
         intensity = light.shade_normals(mesh.face_normals, fraction=fraction)
         intensity.shape = (nf, 1, 1)

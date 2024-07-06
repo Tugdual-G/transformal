@@ -25,13 +25,25 @@ from transformal.operators import (
 
 
 def get_oriented_one_ring(mesh: trimesh.Trimesh) -> np.ndarray:
+    """
+    Returns the oriented one ring as a contiguous list of variable size sublists.
+    The normals of the mesh are used to order the one-ring in
+    a counter-clockwise order.
+    The one-ring is stored as follow,
+    the first element of the list is the lenght of the one ring for each vertice,
+    followed by the vertex indices.
+
+    |vertice 0                   |vertice 1             |vertice 2        ...
+    [n_0, i_00, i_01, i_02, i_03, n_1, i_10, i_11, i_12, n_2, i_20, i_21, ...]
+
+    """
     nv = mesh.vertices.shape[0]
-    # vertices = np.zeros((nv, 3), dtype=np.float64)
     vertices = mesh.vertices
 
     g = nx.from_edgelist(mesh.edges_unique)
     one_ring = [list(g[i].keys()) for i in range(nv)]
 
+    # total length of the storage array
     n_entries = nv
     n_entries += sum(map(len, one_ring))
     one_ordered = np.zeros(n_entries, dtype=np.int64)
@@ -47,6 +59,8 @@ def get_oriented_one_ring(mesh: trimesh.Trimesh) -> np.ndarray:
             one_ordered[k] = ring_vert_idx
             k += 1
 
+    # this is necessary to initialize  trimesh vertex_normals
+    # otherwise, we get trash values
     normals = np.zeros((nv, 3), dtype=np.float64)
     normals[:] = mesh.vertex_normals[:]
 
@@ -55,15 +69,18 @@ def get_oriented_one_ring(mesh: trimesh.Trimesh) -> np.ndarray:
 
 
 def scalar_curvature(mesh: trimesh.Trimesh, kN: np.ndarray) -> np.ndarray:
+    """Returns the projection of kN on the mesh normal."""
     return np.sum(mesh.vertex_normals * kN, axis=1)
 
 
 def integrate(mesh: trimesh.Trimesh, f: np.ndarray):
+    """Integration over the surface of the mesh using the trapezoidal rule."""
     S = np.mean(f[mesh.faces], axis=1) * mesh.area_faces
     return np.sum(S)
 
 
 def orthonormalize(mesh: trimesh.Trimesh, vects: list):
+    """Transform the provided list of vectors into an orthonormal basis."""
     for i, v in enumerate(vects):
         for j in range(i):
             v[:] -= integrate(mesh, v * vects[j]) * vects[j]
@@ -71,6 +88,7 @@ def orthonormalize(mesh: trimesh.Trimesh, vects: list):
 
 
 def apply_constraints(mesh: trimesh.Trimesh, rho: np.ndarray):
+    """Discard the composants of a vector which does not abide to a constraint."""
     constraints = [
         np.ones(mesh.vertices.shape[0]),
         mesh.vertex_normals[:, 0].copy(),
@@ -83,6 +101,7 @@ def apply_constraints(mesh: trimesh.Trimesh, rho: np.ndarray):
 
 
 def eigensolve(M: sparse.csc_array, v: np.ndarray):
+    """Finds the eigenvector corresponding to the smallest eigen value."""
     nv = v.shape[0]
     v[:] = 0
     v[::4] = 1.0
@@ -96,67 +115,7 @@ def eigensolve(M: sparse.csc_array, v: np.ndarray):
     v.shape = (nv,)
 
 
-def eigensolve_eigsh(M: sparse.csc_array, v: np.ndarray):
-    nv = v.shape[0]
-    v[:] = 0.0
-    v[::4] = 1.0
-    _, eigvec = sparse.linalg.eigsh(M, k=3, sigma=0.0, v0=v)
-    v[:] = eigvec[:, np.argmax(norm(eigvec - v[:, np.newaxis], axis=0))]
-    v.shape = (nv // 4, 4)
-    v[:] /= np.mean(np.sqrt(np.sum(v**2, axis=1)))
-    v.shape = (nv,)
-
-
-def flow(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
-    nv = vertices.shape[0]
-
-    # building the operator (X = D - rho)
-    d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
-    X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
-    # finding the eigenvector lambd for the minimum eigenvalue
-    lambd = np.zeros(4 * nv, dtype=np.float64)
-    eigensolve(X, lambd)
-
-    # Applying the transform defined by lambd on the edge vectors
-    div_e, constridx, constrpos = edges_div(vertices, lambd, one_ring)
-    i_sorted = np.argsort(constridx)
-    constridx = constridx[i_sorted]
-    constrpos = constrpos[i_sorted]
-    i1 = constridx[0]
-    i2 = constridx[1]
-
-    # Building the laplacian matrix to solve L x = div_e
-    idx_i, idx_j, data = quaternionic_laplacian_matrix(vertices, one_ring)
-    # csc for column slicing
-    L = sparse.csc_array((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
-
-    # Applying constraint to the system
-    # TODO make it work for bounded shapes
-    for i, c in zip(constridx, constrpos):
-        div_e[:] -= L[:, i * 4 : i * 4 + 4] @ c.T
-
-    i_del = np.array([ic * 4 + i for ic in [i1, i2] for i in range(4)], dtype=np.int_)
-
-    # Specific rows and columns need to get deleted to get a well posed problem,
-    # this is specific to mesh without boundaries.
-    idx_i, idx_j, data = symetric_delete(i_del, idx_i, idx_j, data, nv * 4)
-    div_e = np.delete(div_e, i_del, axis=0)
-
-    # Rebuild the csr matrix
-    L = sparse.csc_array((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
-
-    new_vertices = sparse.linalg.spsolve(L, div_e)
-
-    new_vertices.shape = (nv - 2, 4)
-    vertices[:i1, :] = new_vertices[:i1, 1:]
-    vertices[i1, :] = constrpos[0, 1:]
-    vertices[i1 + 1 : i2, :] = new_vertices[i1 : i2 - 1, 1:]
-    vertices[i2, :] = constrpos[1, 1:]
-    vertices[i2 + 1 :, :] = new_vertices[i2 - 1 :, 1:]
-
-
-def transform(mesh: trimesh.Trimesh, rho: np.ndarray, one_ring: np.ndarray):
-    vertices = mesh.vertices
+def transform(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
     nv = vertices.shape[0]
 
     # building the operator (X = D - rho)
@@ -168,6 +127,8 @@ def transform(mesh: trimesh.Trimesh, rho: np.ndarray, one_ring: np.ndarray):
     eigensolve(X, lambd)
 
     # Applying the transform defined by lambd on the edge vectors
+    # Retrives a position constraint for two vertices, and their indices
+    # in the vertice list.
     div_e, constridx, constrpos = edges_div(vertices, lambd, one_ring)
     i_sorted = np.argsort(constridx)
     constridx = constridx[i_sorted]

@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
+"""
+
+This modules contains the lower level differential/graph operators.
+
+Run this module to compile it before use.
+
+"""
+
 from logging import raiseExceptions
-import numba
 from numba.pycc import CC
+from numba import njit
 import numpy as np
 from numpy.linalg import norm
-from numba import types, njit, jit
 
 cc = CC("operators")
 cc.verbose = True
@@ -13,6 +20,7 @@ cc.verbose = True
 @njit
 @cc.export("mul_quatern", "f8[::1](f8[::1], f8[::1])")
 def mul_quatern(u, v):
+    """Quaternion multiplication."""
     w0, x0, y0, z0 = u
     w1, x1, y1, z1 = v
     return np.array(
@@ -31,6 +39,10 @@ def mul_quatern(u, v):
     "(i8[::1], f8[:,::1],f8[:,::1])",
 )
 def set_rings_order(one_ring, normals, vertices):
+    """
+    Sort the one-ring indices in an anti-clockwise order
+    around the normal, with the normal pointing toward the viewer.
+    """
     ei = np.zeros(3, dtype=np.float64)
     ej = np.zeros(3, dtype=np.float64)
 
@@ -53,8 +65,7 @@ def set_rings_order(one_ring, normals, vertices):
                 or_tmp = one_ring[i0 + j + 1]
                 one_ring[i0 + j + 1] = one_ring[i0 + ring_length - j]
                 one_ring[i0 + ring_length - j] = or_tmp
-        # oring += [one_ring[i0 : i0 + one_ring[i0] + 1].tolist()]
-        itmp = i0
+
         i0 += one_ring[i0] + 1
         vi += 1
 
@@ -72,6 +83,10 @@ def set_rings_order(one_ring, normals, vertices):
     "Tuple((i8[::1],i8[::1],f8[::1]))(f8[:,::1], i8[::1], f8[::1])",
 )
 def dirac_op(vertices, one_ring, rho):
+    """
+    Returns the indices and values needed to construct the sparse
+    representation of the dirac operator on the mesh.
+    """
     nv = vertices.shape[0]
     assert rho.shape[0] == nv
 
@@ -177,6 +192,11 @@ def dirac_op(vertices, one_ring, rho):
     "Tuple((f8[::1],i8[::1],f8[:,::1]))(f8[:,::1], f8[::1], i8[::1])",
 )
 def edges_div(vertices, lambd, one_ring):
+    """
+    Computes the divergence of the mesh edges after applying the lambd
+    quaternionic transform to them.
+    Return the divergence of the edges as well as a position constraint for two vertices.
+    """
     nv = vertices.shape[0]
 
     eij = np.zeros(4, dtype=np.float64)
@@ -282,6 +302,10 @@ def edges_div(vertices, lambd, one_ring):
     "Tuple((i8[::1],i8[::1],f8[::1]))(f8[:,::1], i8[::1])",
 )
 def quaternionic_laplacian_matrix(vertices, one_ring):
+    """
+    Returns the indices and values needed to construct
+    the Laplace-Beltrami operator on the mesh.
+    """
     nv = vertices.shape[0]
 
     max_n_ring = 0
@@ -314,7 +338,7 @@ def quaternionic_laplacian_matrix(vertices, one_ring):
             for r_i in range(ring_nv):
                 ring_vert[r_i, :] = vertices[one_ring[r_i0 + r_i + 1]]
 
-            # edges connecting the point to itś neighbours
+            # edges connecting the point to its neighbours
             edges_vect = ring_vert - vertices[i, :]
 
             # iterating over each of the edges adjacent to the vertex i
@@ -357,6 +381,10 @@ def quaternionic_laplacian_matrix(vertices, one_ring):
     "f8[:,::1](f8[:,::1], i8[::1])",
 )
 def mean_curvature(vertices, one_ring):
+    """
+    Computes the mean curvature for each vertices of the mesh.
+
+    """
 
     nv = vertices.shape[0]
 
@@ -412,6 +440,10 @@ def mean_curvature(vertices, one_ring):
     "Tuple((i8[::1],i8[::1],f8[::1]))(i8[::1],i8[::1], i8[::1],f8[::1],i8)",
 )
 def symetric_delete(i_del, idx_i, idx_j, data, n):
+    """
+    Delete the requested rows and columns sharing the
+    same index in a sparse matrix representation.
+    """
     idx_table = np.empty(n, np.int_)
     idx_sp = 0
     for k in range(n):

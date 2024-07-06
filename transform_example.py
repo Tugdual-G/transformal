@@ -41,8 +41,12 @@ nv = vertices.shape[0]
 #   > 0  create a concave deformation
 #   < 0 create a convex deformation
 #
+#   kN, the mean curvature is defined as the
+#   local average of the principal curvatures,
+#   not the average curvature over the mesh !
+#
 # ++++++++++++++++++++++++++++++++++++++++
-# We use the mean curvature as a reference value to choose
+# Use the mean curvature as a reference value to choose
 # resonable curvature change values
 one_ring = get_oriented_one_ring(mesh)
 kN = mean_curvature(vertices, one_ring)
@@ -112,7 +116,7 @@ zlim = [(vertices[:, 2].min(), vertices[:, 2].max())]
 # ++++++++++++++++++++++++++++++
 # Applying the Transform
 # +++++++++++++++++++++++++++++
-transform(mesh, rho, one_ring)
+transform(vertices, rho, one_ring)
 
 # Plots the transform
 kN = mean_curvature(vertices, one_ring)

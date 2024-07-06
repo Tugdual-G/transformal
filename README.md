@@ -20,7 +20,7 @@ This propriety is desirable when one wants to fair a mesh without altering the m
 ### Dirac operator and quaternionic transform
 These transformations can be determined using the eigenvectors of the Dirac operator, or more precisely,
 using the eigenvectors of $D-\rho$ with $\rho$ the given curvature change over the surface.
-The Dirac operator, $D$, is defined as $D^2 = \Delta$ , with $\Delta$ being in our case the Laplace-Beltrami operator.
+The Dirac operator, $D$, is defined as $D^2 = \Delta$ , with $\Delta$ being in our case the Laplace-Beltrami operator. 
 The components of the eigenvectors are quaternions defining the transformation (scaling and rotation) which is applied to the tangent vectors of the surface.
 Then the vertices position can be computed using the transformed tangent vectors (up to a constant position).
 
