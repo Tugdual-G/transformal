@@ -75,7 +75,28 @@ This project use a procedural style which seem better suited for these kinds of 
 The project use numba cc to compile the modules into a dynamic .so library, 
 so before running the scripts for the first time, you should compile with the command :
         
-        python compile_modules.py
+        cd transformal/; python operators_core.py
+
+code example:
+
+```python
+import trimesh
+from transformal.transform import (
+    transform,
+    get_oriented_one_ring,
+)
+mesh: trimesh.Trimesh = trimesh.load("mesh.ply")
+
+# define the change in curvature
+rho = define_rho()
+
+# Get the one-ring of the mesh 
+one_ring = get_oriented_one_ring(mesh)
+
+# Apply the transformation to the mesh
+transform(mesh, rho, one_ring)
+
+```
 
 ![example](ballfig.png)
 
