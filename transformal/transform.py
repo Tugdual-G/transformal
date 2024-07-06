@@ -31,7 +31,6 @@ def get_oriented_one_ring(mesh: trimesh.Trimesh) -> np.ndarray:
 
     g = nx.from_edgelist(mesh.edges_unique)
     one_ring = [list(g[i].keys()) for i in range(nv)]
-    print(f"{len(one_ring) = }")
 
     n_entries = nv
     n_entries += sum(map(len, one_ring))
@@ -92,7 +91,6 @@ def eigensolve(M: sparse.csc_array, v: np.ndarray):
         v[:] = LU.solve(v)
         v[:] /= norm(v)
 
-    # print(f"eigenvalue : {norm(M@v)/norm(v) = }")
     v.shape = (nv // 4, 4)
     v[:] /= np.mean(np.sqrt(np.sum(v**2, axis=1)))
     v.shape = (nv,)
@@ -112,7 +110,7 @@ def eigensolve_eigsh(M: sparse.csc_array, v: np.ndarray):
 def flow(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
     nv = vertices.shape[0]
 
-    # building the operator (D - rho)
+    # building the operator (X = D - rho)
     d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
     X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
     # finding the eigenvector lambd for the minimum eigenvalue
@@ -161,10 +159,9 @@ def transform(mesh: trimesh.Trimesh, rho: np.ndarray, one_ring: np.ndarray):
     vertices = mesh.vertices
     nv = vertices.shape[0]
 
-    # building the operator (D - rho)
+    # building the operator (X = D - rho)
     d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
     X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
-    # print(f"{np.abs(X-X.T).max() = }")
 
     # finding the eigenvector lambd for the minimum eigenvalue
     lambd = np.zeros(4 * nv)
@@ -197,18 +194,8 @@ def transform(mesh: trimesh.Trimesh, rho: np.ndarray, one_ring: np.ndarray):
 
     # Rebuild the csr matrix
     L = sparse.csc_array((data, (idx_i, idx_j)), shape=((nv - 2) * 4, (nv - 2) * 4))
-    print(f"{np.abs(L-L.T).max() = }")
-
-    # norm_L = norm(L)
-    # inv_L = inv(L)
-    # norm_invA = norm(inv_L)
-    # cond = norm_L*norm_invA
-    # print(f"L condition number = {cond}")
 
     new_vertices = sparse.linalg.spsolve(L, div_e)
-    residual = norm(L @ new_vertices - div_e)
-    if residual > 1e-10:
-        print(f"WARNING : {residual =}")
 
     new_vertices.shape = (nv - 2, 4)
     vertices[:i1, :] = new_vertices[:i1, 1:]
