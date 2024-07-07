@@ -38,8 +38,8 @@ nv = vertices.shape[0]
 #
 #      Definition of the curvature change
 #
-#   > 0  create a concave deformation
-#   < 0 create a convex deformation
+#   rho > 0  create a concave deformation
+#   rho < 0 create a convex deformation
 #
 #   kN, the mean curvature is defined as the
 #   local average of the principal curvatures,
@@ -107,11 +107,8 @@ pc = art3d.Poly3DCollection(
 )
 ax1.add_collection(pc)
 
-# used to keep a nice 3D aspect-ratio
-xlim = [(vertices[:, 0].min(), vertices[:, 0].max())]
-ylim = [(vertices[:, 1].min(), vertices[:, 1].max())]
-zlim = [(vertices[:, 2].min(), vertices[:, 2].max())]
-
+# to keep a nice 3D aspect-ratio
+axis_lim = [(vertices.min(), vertices.max())]
 
 # ++++++++++++++++++++++++++++++
 # Applying the Transform
@@ -138,14 +135,12 @@ pc = art3d.Poly3DCollection(
 ax2.add_collection(pc)
 
 
-xlim += [(vertices[:, 0].min(), vertices[:, 0].max())]
-ylim += [(vertices[:, 1].min(), vertices[:, 1].max())]
-zlim += [(vertices[:, 2].min(), vertices[:, 2].max())]
-
+# aspect ratio
+axis_lim += [(vertices.min(), vertices.max())]
 for i, ax in enumerate(axs):
-    ax.set_xlim(*xlim[i])
-    ax.set_ylim(*ylim[i])
-    ax.set_zlim(*zlim[i])
+    ax.set_xlim(*axis_lim[i])
+    ax.set_ylim(*axis_lim[i])
+    ax.set_zlim(*axis_lim[i])
     ax.set_box_aspect([1, 1, 1])
     ax.set_axis_off()
 

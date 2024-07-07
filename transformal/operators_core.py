@@ -363,16 +363,6 @@ def mean_curvature(vertices, one_ring, max_one_ring_length):
 
     nv = vertices.shape[0]
 
-    # max_one_ring_length = 0
-    # r_i0 = 0
-    # len_one_r = 0
-    # while r_i0 < one_ring.shape[0] and len_one_r < nv:
-    #     if one_ring[r_i0] > max_one_ring_length:
-    #         max_one_ring_length = one_ring[r_i0]
-    #     r_i0 += one_ring[r_i0] + 1
-    #     len_one_r += 1
-
-    # assert len_one_r == nv and r_i0 == one_ring.shape[0]
     ring_vert = np.zeros((max_one_ring_length, 3), dtype=np.float64)
 
     kN = np.zeros((nv, 3), dtype=np.float64)
