@@ -80,9 +80,9 @@ def set_rings_order(one_ring, normals, vertices):
 
 @cc.export(
     "dirac_op",
-    "Tuple((i8[::1],i8[::1],f8[::1]))(f8[:,::1], i8[::1], f8[::1])",
+    "Tuple((i8[::1],i8[::1],f8[::1]))(f8[:,::1], i8[::1], i8, i8,f8[::1])",
 )
-def dirac_op(vertices, one_ring, rho):
+def dirac_op(vertices, one_ring, max_one_ring_length, n_entries, rho):
     """
     Returns the indices and values needed to construct the sparse
     representation of the dirac operator on the mesh.
@@ -95,21 +95,7 @@ def dirac_op(vertices, one_ring, rho):
     X_ii = np.zeros(4, dtype=np.float64)
     block_ij = np.zeros((4, 4), dtype=np.float64)
 
-    max_n_ring = 0
-    n_entries = nv
-    r_i0 = 0
-    len_one_r = 0
-    while r_i0 < one_ring.shape[0] and len_one_r < nv:
-        n_entries += one_ring[r_i0]
-        if one_ring[r_i0] > max_n_ring:
-            max_n_ring = one_ring[r_i0]
-        r_i0 += one_ring[r_i0] + 1
-        len_one_r += 1
-
-    assert len_one_r == nv and r_i0 == one_ring.shape[0]
-
-    ring_vert = np.zeros((max_n_ring, 3), dtype=np.float64)
-    n_entries *= 16
+    ring_vert = np.zeros((max_one_ring_length, 3), dtype=np.float64)
 
     idx_i = np.zeros(n_entries, dtype=np.int_)
     idx_j = np.zeros(n_entries, dtype=np.int_)
@@ -189,9 +175,9 @@ def dirac_op(vertices, one_ring, rho):
 
 @cc.export(
     "edges_div",
-    "Tuple((f8[::1],i8[::1],f8[:,::1]))(f8[:,::1], f8[::1], i8[::1])",
+    "Tuple((f8[::1],i8[::1],f8[:,::1]))(f8[:,::1], f8[::1], i8[::1], i8)",
 )
-def edges_div(vertices, lambd, one_ring):
+def edges_div(vertices, lambd, one_ring, max_one_ring_length):
     """
     Computes the divergence of the mesh edges after applying the lambd
     quaternionic transform to them.
@@ -200,7 +186,7 @@ def edges_div(vertices, lambd, one_ring):
     nv = vertices.shape[0]
 
     eij = np.zeros(4, dtype=np.float64)
-    lambdc = lambd.copy()
+    lambdc = lambd.copy()  # the conjugate of lambda
 
     constraint_idx = np.zeros(2, dtype=np.int_)
     constraint_pos = np.zeros((2, 4), dtype=np.float64)
@@ -209,20 +195,9 @@ def edges_div(vertices, lambd, one_ring):
     for i in range(lambd.shape[0] // 4):
         lambdc[4 * i + 1 : 4 * i + 4] *= -1
 
-    max_n_ring = 0
-    n_entries = nv
-    r_i0 = 0
-    len_one_r = 0
-    while r_i0 < one_ring.shape[0] and len_one_r < nv:
-        n_entries += one_ring[r_i0]
-        if one_ring[r_i0] > max_n_ring:
-            max_n_ring = one_ring[r_i0]
-        r_i0 += one_ring[r_i0] + 1
-        len_one_r += 1
+    ring_vert = np.zeros((max_one_ring_length, 3), dtype=np.float64)
 
-    ring_vert = np.zeros((max_n_ring, 3), dtype=np.float64)
-
-    assert len_one_r == nv and r_i0 == one_ring.shape[0]
+    # assert len_one_r == nv and r_i0 == one_ring.shape[0]
     i_const = 0
     div = np.zeros((nv * 4))
     r_i0 = 0
@@ -299,30 +274,30 @@ def edges_div(vertices, lambd, one_ring):
 
 @cc.export(
     "quaternionic_laplacian_matrix",
-    "Tuple((i8[::1],i8[::1],f8[::1]))(f8[:,::1], i8[::1])",
+    "Tuple((i8[::1],i8[::1],f8[::1]))(f8[:,::1], i8[::1], i8, i8)",
 )
-def quaternionic_laplacian_matrix(vertices, one_ring):
+def quaternionic_laplacian_matrix(vertices, one_ring, max_one_ring_length, n_entries):
     """
     Returns the indices and values needed to construct
     the Laplace-Beltrami operator on the mesh.
     """
     nv = vertices.shape[0]
 
-    max_n_ring = 0
-    n_entries = nv
-    r_i0 = 0
-    len_one_r = 0
-    while r_i0 < one_ring.shape[0] and len_one_r < nv:
-        n_entries += one_ring[r_i0]
-        if one_ring[r_i0] > max_n_ring:
-            max_n_ring = one_ring[r_i0]
-        r_i0 += one_ring[r_i0] + 1
-        len_one_r += 1
+    # max_one_ring_length = 0
+    # n_entries = nv
+    # r_i0 = 0
+    # len_one_r = 0
+    # while r_i0 < one_ring.shape[0] and len_one_r < nv:
+    #     n_entries += one_ring[r_i0]
+    #     if one_ring[r_i0] > max_one_ring_length:
+    #         max_one_ring_length = one_ring[r_i0]
+    #     r_i0 += one_ring[r_i0] + 1
+    #     len_one_r += 1
 
-    assert len_one_r == nv and r_i0 == one_ring.shape[0]
+    # assert len_one_r == nv and r_i0 == one_ring.shape[0]
 
-    ring_vert = np.zeros((max_n_ring, 3), dtype=np.float64)
-    n_entries *= 16
+    ring_vert = np.zeros((max_one_ring_length, 3), dtype=np.float64)
+    # n_entries *= 16
 
     idx_i = np.zeros(n_entries, dtype=np.int_)
     idx_j = np.zeros(n_entries, dtype=np.int_)
@@ -378,9 +353,9 @@ def quaternionic_laplacian_matrix(vertices, one_ring):
 
 @cc.export(
     "mean_curvature",
-    "f8[:,::1](f8[:,::1], i8[::1])",
+    "f8[:,::1](f8[:,::1], i8[::1], i8)",
 )
-def mean_curvature(vertices, one_ring):
+def mean_curvature(vertices, one_ring, max_one_ring_length):
     """
     Computes the mean curvature for each vertices of the mesh.
 
@@ -388,17 +363,17 @@ def mean_curvature(vertices, one_ring):
 
     nv = vertices.shape[0]
 
-    max_n_ring = 0
-    r_i0 = 0
-    len_one_r = 0
-    while r_i0 < one_ring.shape[0] and len_one_r < nv:
-        if one_ring[r_i0] > max_n_ring:
-            max_n_ring = one_ring[r_i0]
-        r_i0 += one_ring[r_i0] + 1
-        len_one_r += 1
+    # max_one_ring_length = 0
+    # r_i0 = 0
+    # len_one_r = 0
+    # while r_i0 < one_ring.shape[0] and len_one_r < nv:
+    #     if one_ring[r_i0] > max_one_ring_length:
+    #         max_one_ring_length = one_ring[r_i0]
+    #     r_i0 += one_ring[r_i0] + 1
+    #     len_one_r += 1
 
-    assert len_one_r == nv and r_i0 == one_ring.shape[0]
-    ring_vert = np.zeros((max_n_ring, 3), dtype=np.float64)
+    # assert len_one_r == nv and r_i0 == one_ring.shape[0]
+    ring_vert = np.zeros((max_one_ring_length, 3), dtype=np.float64)
 
     kN = np.zeros((nv, 3), dtype=np.float64)
     r_i0 = 0

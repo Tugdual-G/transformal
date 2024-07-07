@@ -1,7 +1,7 @@
 ![example of flow](animation_crop.gif)
 # Basic conformal transformation python module  
 
-The module provides methods to find the nearest conformal transformation of a surface mesh for a given mean curvature change.
+The module provides methods to find the nearest conformal transformation of a closed surface mesh for a given mean curvature change.
 Curvature flow/fairing can be applied, such as shown in the script *flow_example.py* .
 
 ## References
@@ -35,8 +35,8 @@ while norm(residual) > tolerance :
     eigenvector /= norm(eigenvector) # ensure the vector does not grow or shrink to much
 ```
 
-This process is the main bottleneck of the code, and could be improved by implementing a solver using the quaternionic multiplication operator rather than traditional multiplication.
-Implementing a real quaternionic solver would reduce the amount of memory transaction, since for now, quaternions are represented by 4x4 matrix to work with traditional solvers. 
+This process is the main bottleneck of the code, and could be improved by implementing a solver using the Hamilton product rather than traditional multiplication.
+This would reduce the amount of memory transaction and cache misses, since for now, quaternions are represented by 4x4 matrix to work with traditional solvers. 
 
 Otherwise, a matrix-free methods such as LOBPCG could be used... with a quaternionic matrix.
 
@@ -94,7 +94,7 @@ rho = define_rho()
 one_ring = get_oriented_one_ring(mesh)
 
 # Apply the transformation to the mesh
-transform(mesh, rho, one_ring)
+transform(mesh.vertices, rho, one_ring)
 
 ```
 

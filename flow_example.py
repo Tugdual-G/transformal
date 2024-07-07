@@ -53,7 +53,9 @@ fig, ax = plt.subplots(1, 1, figsize=(8, 7), subplot_kw=dict(projection="3d"))
 ax.axis("off")
 
 # Use cuvature to define the coloration of the mesh's faces
-k = scalar_curvature(mesh, mean_curvature(vertices, one_ring))
+k = scalar_curvature(
+    mesh, mean_curvature(vertices, one_ring["data"], one_ring["max_length"])
+)
 k_min = k.min()
 k_max = k.max()
 # Define the colors of the mesh
@@ -96,7 +98,9 @@ def animate(i):
     """Animation funcion"""
     dt = 0.5
     if i > 5:
-        rho = -dt * scalar_curvature(mesh, mean_curvature(vertices, one_ring))
+        rho = -dt * scalar_curvature(
+            mesh, mean_curvature(vertices, one_ring["data"], one_ring["max_length"])
+        )
         transform(vertices, rho, one_ring)
         centerofmass = np.mean(vertices, axis=0)
         vertices[:] = vertices - centerofmass  # keeps the mesh centered

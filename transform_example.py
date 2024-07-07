@@ -49,7 +49,7 @@ nv = vertices.shape[0]
 # Use the mean curvature as a reference value to choose
 # resonable curvature change values
 one_ring = get_oriented_one_ring(mesh)
-kN = mean_curvature(vertices, one_ring)
+kN = mean_curvature(vertices, one_ring["data"], one_ring["max_length"])
 k = scalar_curvature(mesh, kN)
 # Average mean curvature over the mesh
 mk = integrate(mesh, k) / integrate(mesh, np.ones(nv))
@@ -119,7 +119,7 @@ zlim = [(vertices[:, 2].min(), vertices[:, 2].max())]
 transform(vertices, rho, one_ring)
 
 # Plots the transform
-kN = mean_curvature(vertices, one_ring)
+kN = mean_curvature(vertices, one_ring["data"], one_ring["max_length"])
 k = scalar_curvature(mesh, kN)
 
 k_fc = vertex2face(mesh, k)

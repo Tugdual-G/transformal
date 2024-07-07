@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """
 This module define the higher level functions:
-The most relevant ones are,
+The most relevant one is,
 
-    flow()       apply fairing via curvature flow
-
-    transform()  find the nearest conformal transform
+    transform()  : find the nearest conformal transform
 
 """
 from __future__ import annotations
@@ -14,6 +12,7 @@ from numpy.linalg import norm
 import trimesh
 import networkx as nx
 from scipy import sparse
+from typing import Tuple
 from transformal.operators import (
     dirac_op,
     set_rings_order,
@@ -24,9 +23,14 @@ from transformal.operators import (
 )
 
 
-def get_oriented_one_ring(mesh: trimesh.Trimesh) -> np.ndarray:
+def get_oriented_one_ring(mesh: trimesh.Trimesh) -> dict:
     """
-    Returns the oriented one ring as a contiguous list of variable size sublists.
+    Returns :
+    - per vertices one-ring list,
+    - length of the longest one-ring,
+    - total number of one-ring elements.
+
+    The oriented one ring is stored as a contiguous list of variable size sublists.
     The normals of the mesh are used to order the one-ring in
     a counter-clockwise order.
     The one-ring is stored as follow,
@@ -37,24 +41,31 @@ def get_oriented_one_ring(mesh: trimesh.Trimesh) -> np.ndarray:
     [n_0, i_00, i_01, i_02, i_03, n_1, i_10, i_11, i_12, n_2, i_20, i_21, ...]
 
     """
+
+    one_ring = {}
     nv = mesh.vertices.shape[0]
     vertices = mesh.vertices
 
     g = nx.from_edgelist(mesh.edges_unique)
-    one_ring = [list(g[i].keys()) for i in range(nv)]
+    one_ring_data = [list(g[i].keys()) for i in range(nv)]
+    one_ring["max_length"] = max(map(len, one_ring_data))
 
-    # total length of the storage array
-    n_entries = nv
-    n_entries += sum(map(len, one_ring))
-    one_ordered = np.zeros(n_entries, dtype=np.int64)
+    # total number of one-ring elements
+    one_ring["n_total_elements"] = sum(map(len, one_ring_data))
+    one_ordered = np.zeros(one_ring["n_total_elements"] + nv, dtype=np.int64)
 
     k = 0
-    for i, ring in enumerate(one_ring):
+    for i, ring in enumerate(one_ring_data):
         one_ordered[k] = len(ring)
         k += 1
         cycle = nx.cycle_basis(g.subgraph(ring))
-        if len(cycle) != 1:
+        if len(cycle) > 1:
             raise ValueError(f"vertex {i} has more than one cycle in its one-ring.")
+
+        if len(cycle) < 1:
+            # In case we encounter an edge
+            raise ValueError(f"The one-ring of vertex {i} is empty.")
+
         for ring_vert_idx in cycle[0]:
             one_ordered[k] = ring_vert_idx
             k += 1
@@ -65,7 +76,10 @@ def get_oriented_one_ring(mesh: trimesh.Trimesh) -> np.ndarray:
     normals[:] = mesh.vertex_normals[:]
 
     set_rings_order(one_ordered, normals, vertices)
-    return one_ordered
+
+    one_ring["data"] = one_ordered
+
+    return one_ring
 
 
 def scalar_curvature(mesh: trimesh.Trimesh, kN: np.ndarray) -> np.ndarray:
@@ -115,11 +129,17 @@ def eigensolve(M: sparse.csc_array, v: np.ndarray):
     v.shape = (nv,)
 
 
-def transform(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
+def transform(vertices: np.ndarray, rho: np.ndarray, one_ring: dict):
     nv = vertices.shape[0]
 
     # building the operator (X = D - rho)
-    d_i, d_j, d_data = dirac_op(vertices, one_ring, rho)
+    d_i, d_j, d_data = dirac_op(
+        vertices,
+        one_ring["data"],
+        one_ring["max_length"],
+        (nv + one_ring["n_total_elements"]) * 16,
+        rho,
+    )
     X = sparse.csc_array((d_data, (d_i, d_j)), shape=(nv * 4, nv * 4))
 
     # finding the eigenvector lambd for the minimum eigenvalue
@@ -129,7 +149,9 @@ def transform(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
     # Applying the transform defined by lambd on the edge vectors
     # Retrives a position constraint for two vertices, and their indices
     # in the vertice list.
-    div_e, constridx, constrpos = edges_div(vertices, lambd, one_ring)
+    div_e, constridx, constrpos = edges_div(
+        vertices, lambd, one_ring["data"], one_ring["max_length"]
+    )
     i_sorted = np.argsort(constridx)
     constridx = constridx[i_sorted]
     constrpos = constrpos[i_sorted]
@@ -137,7 +159,12 @@ def transform(vertices: np.ndarray, rho: np.ndarray, one_ring: np.ndarray):
     i2 = constridx[1]
 
     # Building the laplacian matrix to solve L x = div_e
-    idx_i, idx_j, data = quaternionic_laplacian_matrix(vertices, one_ring)
+    idx_i, idx_j, data = quaternionic_laplacian_matrix(
+        vertices,
+        one_ring["data"],
+        one_ring["max_length"],
+        (nv + one_ring["n_total_elements"]) * 16,
+    )
     # csc for row slicing
     L = sparse.csc_array((data, (idx_i, idx_j)), shape=(nv * 4, nv * 4))
 
@@ -200,13 +227,13 @@ if __name__ == "__main__":
 
     dt = 1.0
     n_iter = 1
-    k = scalar_curvature(mesh, mean_curvature(vertices, one_ring))
+    k = scalar_curvature(mesh, mean_curvature(vertices, one_ring["data"]))
     k_min = k.min()
     k_max = k.max()
 
     for it in range(n_iter):
         flow(vertices, -dt * k, one_ring)
-        k = scalar_curvature(mesh, mean_curvature(vertices, one_ring))
+        k = scalar_curvature(mesh, mean_curvature(vertices, one_ring["data"]))
 
     cm = to_cmap(vertex2face(mesh, k), k_min, k_max)
     fig, ax = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection="3d"))
