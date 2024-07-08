@@ -7,7 +7,6 @@ Run this module to compile it before use.
 
 """
 
-from logging import raiseExceptions
 from numba.pycc import CC
 from numba import njit
 import numpy as np
@@ -32,6 +31,38 @@ def mul_quatern(u, v):
         ],
         dtype=np.float64,
     )
+
+
+@njit
+def fill_quaternionic_matrix_block(
+    i,
+    j,
+    sparse_idx,
+    quaternion,
+    idx_i,
+    idx_j,
+    data,
+):
+    """
+    Fill a given quaternion block of the sparse matrix entries list.
+    Returns the incremented idex of the sparse list.
+    """
+    block_ij = np.array(
+        [
+            [quaternion[0], -quaternion[1], -quaternion[2], -quaternion[3]],
+            [quaternion[1], quaternion[0], -quaternion[3], quaternion[2]],
+            [quaternion[2], quaternion[3], quaternion[0], -quaternion[1]],
+            [quaternion[3], -quaternion[2], quaternion[1], quaternion[0]],
+        ]
+    )
+
+    for m in range(4):
+        for n in range(4):
+            idx_i[sparse_idx] = i * 4 + m
+            idx_j[sparse_idx] = j * 4 + n
+            data[sparse_idx] = block_ij[m, n]
+            sparse_idx += 1
+    return sparse_idx
 
 
 @cc.export(
@@ -87,88 +118,63 @@ def dirac_op(vertices, one_ring, max_one_ring_length, n_entries, rho):
     Returns the indices and values needed to construct the sparse
     representation of the dirac operator on the mesh.
     """
-    nv = vertices.shape[0]
-    assert rho.shape[0] == nv
 
-    ei = np.zeros(4, dtype=np.float64)
+    ei = np.zeros(4, dtype=np.float64)  # quaternion edge representation
     ej = np.zeros(4, dtype=np.float64)
-    X_ii = np.zeros(4, dtype=np.float64)
-    block_ij = np.zeros((4, 4), dtype=np.float64)
+    x_ii = np.zeros(4, dtype=np.float64)  # temporary storage for diagonal entries
 
     ring_vert = np.zeros((max_one_ring_length, 3), dtype=np.float64)
 
+    # sparse matrix indices
     idx_i = np.zeros(n_entries, dtype=np.int_)
     idx_j = np.zeros(n_entries, dtype=np.int_)
     data = np.zeros(n_entries, dtype=np.float64)
 
-    sp_k = 0
-    r_i0 = 0
-    for i in range(nv):
+    sparse_idx = 0  # current indice in the idx_i, idx_j, and data arrays
+    one_ring_i0 = 0  # first element of each one-ring sublist
+    for i in range(vertices.shape[0]):
         # TODO on't work for bounded domain
-        ring_nv = one_ring[r_i0]
+        ring_nv = one_ring[one_ring_i0]
         if ring_nv > 1:
             for r_i in range(ring_nv):
-                ring_vert[r_i, :] = vertices[one_ring[r_i0 + r_i + 1]]
-            v = vertices[i, :]
+                ring_vert[r_i, :] = vertices[one_ring[one_ring_i0 + r_i + 1]]
 
-            X_ii[:] = 0.0
+            x_ii[:] = 0.0
             for k in range(ring_nv):
-                j = one_ring[r_i0 + k + 1]
+                j = one_ring[one_ring_i0 + k + 1]
                 ei[1:] = ring_vert[k] - ring_vert[(k - 1) % ring_nv]
-                ej[1:] = ring_vert[(k - 1) % ring_nv] - v
-                # print(ring_vert)
-                # print(ei[1:], ej[1:])
-                A_x2 = norm(np.cross(ei[1:], ej[1:]))
-                X_ij = (
-                    -mul_quatern(ei, ej) / (2 * A_x2)
+                ej[1:] = ring_vert[(k - 1) % ring_nv] - vertices[i, :]
+
+                # Area of the dual cell
+                area_x2 = norm(np.cross(ei[1:], ej[1:]))
+
+                x_ij = (  # temporary storage for off-diag entries
+                    -mul_quatern(ei, ej) / (2 * area_x2)
                     + (rho[i] * ej - rho[j] * ei) / 6.0
                 )
-                X_ij[0] += rho[i] * rho[j] * A_x2 / 18.0
+                x_ij[0] += rho[i] * rho[j] * area_x2 / 18.0
 
                 ei[1:] = ring_vert[(k + 1) % ring_nv] - ring_vert[k]
-                ej[1:] = v - ring_vert[(k + 1) % ring_nv]
-                A_x2 = norm(np.cross(ei[1:], ej[1:]))
-                X_ij += (
-                    -mul_quatern(ei, ej) / (2 * A_x2)
+                ej[1:] = vertices[i, :] - ring_vert[(k + 1) % ring_nv]
+
+                area_x2 = norm(np.cross(ei[1:], ej[1:]))
+                x_ij += (
+                    -mul_quatern(ei, ej) / (2 * area_x2)
                     + (rho[i] * ej - rho[j] * ei) / 6.0
                 )
-                X_ij[0] += rho[i] * rho[j] * A_x2 / 18.0
+                x_ij[0] += rho[i] * rho[j] * area_x2 / 18.0
 
-                block_ij[:, :] = np.array(
-                    [
-                        [X_ij[0], -X_ij[1], -X_ij[2], -X_ij[3]],
-                        [X_ij[1], X_ij[0], -X_ij[3], X_ij[2]],
-                        [X_ij[2], X_ij[3], X_ij[0], -X_ij[1]],
-                        [X_ij[3], -X_ij[2], X_ij[1], X_ij[0]],
-                    ]
+                sparse_idx = fill_quaternionic_matrix_block(
+                    i, j, sparse_idx, x_ij, idx_i, idx_j, data
                 )
 
-                for l in range(4):
-                    for m in range(4):
-                        idx_i[sp_k] = i * 4 + l
-                        idx_j[sp_k] = j * 4 + m
-                        data[sp_k] = block_ij[l, m]
-                        sp_k += 1
+                x_ii -= mul_quatern(ei, ei) / (2 * area_x2)
+                x_ii[0] += rho[i] * rho[i] * area_x2 / 18.0
 
-                X_ii -= mul_quatern(ei, ei) / (2 * A_x2)
-                X_ii[0] += rho[i] * rho[i] * A_x2 / 18.0
-
-            block_ij[:, :] = np.array(
-                [
-                    [X_ii[0], -X_ii[1], -X_ii[2], -X_ii[3]],
-                    [X_ii[1], X_ii[0], -X_ii[3], X_ii[2]],
-                    [X_ii[2], X_ii[3], X_ii[0], -X_ii[1]],
-                    [X_ii[3], -X_ii[2], X_ii[1], X_ii[0]],
-                ]
+            sparse_idx = fill_quaternionic_matrix_block(
+                i, i, sparse_idx, x_ii, idx_i, idx_j, data
             )
-
-            for l in range(4):
-                for m in range(4):
-                    idx_i[sp_k] = i * 4 + l
-                    idx_j[sp_k] = i * 4 + m
-                    data[sp_k] = block_ij[l, m]
-                    sp_k += 1
-            r_i0 += ring_nv + 1
+            one_ring_i0 += ring_nv + 1
 
     return idx_i, idx_j, data
 
@@ -197,15 +203,14 @@ def edges_div(vertices, lambd, one_ring, max_one_ring_length):
 
     ring_vert = np.zeros((max_one_ring_length, 3), dtype=np.float64)
 
-    # assert len_one_r == nv and r_i0 == one_ring.shape[0]
     i_const = 0
     div = np.zeros((nv * 4))
-    r_i0 = 0
+    one_ring_i0 = 0
     for i in range(nv):
-        ring_nv = one_ring[r_i0]
+        ring_nv = one_ring[one_ring_i0]
         if ring_nv > 1:
             for r_i in range(ring_nv):
-                ring_vert[r_i, :] = vertices[one_ring[r_i0 + r_i + 1]]
+                ring_vert[r_i, :] = vertices[one_ring[one_ring_i0 + r_i + 1]]
 
             # edges connecting the point to itś neighbours
             edges_vect = ring_vert - vertices[i, :]
@@ -224,7 +229,7 @@ def edges_div(vertices, lambd, one_ring, max_one_ring_length):
 
                 cot2 = cos2 / sin2
 
-                j = one_ring[r_i0 + k + 1]
+                j = one_ring[one_ring_i0 + k + 1]
                 eij[1:] = edges_vect[k]
                 e_new = (
                     1
@@ -262,7 +267,7 @@ def edges_div(vertices, lambd, one_ring, max_one_ring_length):
 
                 div[4 * i + 1 : 4 * i + 4] += e_new[1:] * (cot2 + cot1)
                 i_const = i
-        r_i0 += ring_nv + 1
+        one_ring_i0 += ring_nv + 1
 
     constraint_idx[0] = i_const
     constraint_idx[1] = j
@@ -283,21 +288,7 @@ def quaternionic_laplacian_matrix(vertices, one_ring, max_one_ring_length, n_ent
     """
     nv = vertices.shape[0]
 
-    # max_one_ring_length = 0
-    # n_entries = nv
-    # r_i0 = 0
-    # len_one_r = 0
-    # while r_i0 < one_ring.shape[0] and len_one_r < nv:
-    #     n_entries += one_ring[r_i0]
-    #     if one_ring[r_i0] > max_one_ring_length:
-    #         max_one_ring_length = one_ring[r_i0]
-    #     r_i0 += one_ring[r_i0] + 1
-    #     len_one_r += 1
-
-    # assert len_one_r == nv and r_i0 == one_ring.shape[0]
-
     ring_vert = np.zeros((max_one_ring_length, 3), dtype=np.float64)
-    # n_entries *= 16
 
     idx_i = np.zeros(n_entries, dtype=np.int_)
     idx_j = np.zeros(n_entries, dtype=np.int_)
@@ -305,13 +296,13 @@ def quaternionic_laplacian_matrix(vertices, one_ring, max_one_ring_length, n_ent
 
     cot = 0.0
     diag = 0.0
-    sp_k = 0
-    r_i0 = 0
+    sparse_idx = 0
+    one_ring_i0 = 0
     for i in range(nv):
-        ring_nv = one_ring[r_i0]
+        ring_nv = one_ring[one_ring_i0]
         if ring_nv > 2:
             for r_i in range(ring_nv):
-                ring_vert[r_i, :] = vertices[one_ring[r_i0 + r_i + 1]]
+                ring_vert[r_i, :] = vertices[one_ring[one_ring_i0 + r_i + 1]]
 
             # edges connecting the point to its neighbours
             edges_vect = ring_vert - vertices[i, :]
@@ -319,6 +310,7 @@ def quaternionic_laplacian_matrix(vertices, one_ring, max_one_ring_length, n_ent
             # iterating over each of the edges adjacent to the vertex i
             diag = 0.0
             for k in range(ring_nv):
+                # computing the cotengent weights
                 e1 = -edges_vect[(k - 1) % ring_nv]
                 o1 = edges_vect[k] + e1
                 cos1 = np.dot(e1, o1)
@@ -333,20 +325,20 @@ def quaternionic_laplacian_matrix(vertices, one_ring, max_one_ring_length, n_ent
 
                 cot += cos2 / sin2
 
-                j = one_ring[r_i0 + k + 1]
+                j = one_ring[one_ring_i0 + k + 1]
                 diag -= cot
                 for l in range(4):
-                    idx_i[sp_k] = i * 4 + l
-                    idx_j[sp_k] = j * 4 + l
-                    data[sp_k] = cot
-                    sp_k += 1
+                    idx_i[sparse_idx] = i * 4 + l
+                    idx_j[sparse_idx] = j * 4 + l
+                    data[sparse_idx] = cot
+                    sparse_idx += 1
 
             for l in range(4):
-                idx_i[sp_k] = i * 4 + l
-                idx_j[sp_k] = i * 4 + l
-                data[sp_k] = diag
-                sp_k += 1
-        r_i0 += ring_nv + 1
+                idx_i[sparse_idx] = i * 4 + l
+                idx_j[sparse_idx] = i * 4 + l
+                data[sparse_idx] = diag
+                sparse_idx += 1
+        one_ring_i0 += ring_nv + 1
 
     return idx_i, idx_j, data
 
@@ -363,23 +355,24 @@ def mean_curvature(vertices, one_ring, max_one_ring_length):
 
     nv = vertices.shape[0]
 
+    # vertices in the current ring
     ring_vert = np.zeros((max_one_ring_length, 3), dtype=np.float64)
 
-    kN = np.zeros((nv, 3), dtype=np.float64)
-    r_i0 = 0
+    kn = np.zeros((nv, 3), dtype=np.float64)  # curvature
+    one_ring_i0 = 0
     for i in range(nv):
-        ring_nv = one_ring[r_i0]
+        ring_nv = one_ring[one_ring_i0]
         if ring_nv > 1:
             for r_i in range(ring_nv):
-                ring_vert[r_i, :] = vertices[one_ring[r_i0 + r_i + 1]]
+                ring_vert[r_i, :] = vertices[one_ring[one_ring_i0 + r_i + 1]]
 
             # edges connecting the point to itś neighbours
             edges_vect = ring_vert - vertices[i, :]
 
             # area of the ring
-            A = 0
+            area = 0
             for j in range(ring_nv - 1):
-                A += norm(np.cross(edges_vect[j], edges_vect[(j + 1)]))
+                area += norm(np.cross(edges_vect[j], edges_vect[(j + 1)]))
 
             for j in range(ring_nv):
                 e1 = edges_vect[(j - 1) % ring_nv]
@@ -394,10 +387,10 @@ def mean_curvature(vertices, one_ring, max_one_ring_length):
                 sin2 = np.linalg.norm(np.cross(e2, o2))
                 cot2 = cos2 / sin2
 
-                kN[i] -= edges_vect[j] * (cot2 + cot1)
-            kN[i] /= 2 * A
-        r_i0 += ring_nv + 1
-    return kN
+                kn[i] -= edges_vect[j] * (cot2 + cot1)
+            kn[i] /= 2 * area
+        one_ring_i0 += ring_nv + 1
+    return kn
 
 
 @cc.export(

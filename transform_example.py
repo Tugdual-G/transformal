@@ -86,7 +86,7 @@ apply_constraints(mesh, rho)
 # Plots the before/after mesh
 # ++++++++++++++++++++++++++++++++++++++++++++
 
-fig, axs = plt.subplots(1, 2, figsize=(8, 4), subplot_kw=dict(projection="3d"))
+fig, axs = plt.subplots(1, 2, figsize=(8, 4), subplot_kw={"projection": "3d"})
 ax1, ax2 = axs
 
 # colormap

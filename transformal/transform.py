@@ -12,13 +12,11 @@ from numpy.linalg import norm
 import trimesh
 import networkx as nx
 from scipy import sparse
-from typing import Tuple
 from transformal.operators import (
     dirac_op,
     set_rings_order,
     edges_div,
     quaternionic_laplacian_matrix,
-    mean_curvature,
     symetric_delete,
 )
 
@@ -82,15 +80,15 @@ def get_oriented_one_ring(mesh: trimesh.Trimesh) -> dict:
     return one_ring
 
 
-def scalar_curvature(mesh: trimesh.Trimesh, kN: np.ndarray) -> np.ndarray:
-    """Returns the projection of kN on the mesh normal."""
-    return np.sum(mesh.vertex_normals * kN, axis=1)
+def scalar_curvature(mesh: trimesh.Trimesh, kn: np.ndarray) -> np.ndarray:
+    """Returns the projection of kn on the mesh normal."""
+    return np.sum(mesh.vertex_normals * kn, axis=1)
 
 
 def integrate(mesh: trimesh.Trimesh, f: np.ndarray):
     """Integration over the surface of the mesh using the trapezoidal rule."""
-    S = np.mean(f[mesh.faces], axis=1) * mesh.area_faces
-    return np.sum(S)
+    trapezes = np.mean(f[mesh.faces], axis=1) * mesh.area_faces
+    return np.sum(trapezes)
 
 
 def orthonormalize(mesh: trimesh.Trimesh, vects: list):
@@ -120,7 +118,7 @@ def eigensolve(M: sparse.csc_array, v: np.ndarray):
     v[:] = 0
     v[::4] = 1.0
     LU = sparse.linalg.splu(M)
-    for i in range(5):
+    for _ in range(5):
         v[:] = LU.solve(v)
         v[:] /= norm(v)
 
@@ -191,76 +189,3 @@ def transform(vertices: np.ndarray, rho: np.ndarray, one_ring: dict):
     vertices[i1 + 1 : i2, :] = new_vertices[i1 : i2 - 1, 1:]
     vertices[i2, :] = constrpos[1, 1:]
     vertices[i2 + 1 :, :] = new_vertices[i2 - 1 :, 1:]
-
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import art3d
-    from matplotlib.colors import LightSource
-
-    def plot_normals(ax, vertices, normals, length=10, color="r"):
-        for i in range(normals.shape[0]):
-            normalsegm = np.stack((vertices[i], vertices[i, :] + length * normals[i]))
-            ax.plot(normalsegm[0, 0], normalsegm[0, 1], normalsegm[0, 2], color + "o")
-            ax.plot(normalsegm[:, 0], normalsegm[:, 1], normalsegm[:, 2], color)
-
-    def vertex2face(mesh, vval):
-        assert vval.shape[0] == mesh.vertices.shape[0]
-        return np.mean(vval[mesh.faces], axis=1)
-
-    def to_cmap(v, v_min=None, v_max=None):
-        if not v_min:
-            v_min = v.min()
-
-        if not v_max:
-            v_max = v.max()
-        return plt.cm.plasma((v - v_min) / (v_max - v_min))
-
-    # mesh = mesh.mesh(vertices=[[0, 0, 0], [1, 0, 0], [0, 1, 0],[0,0,1]],
-    #                     faces=[[0, 1, 3],[1,2,3],[2,0,3],[0,2,1]])
-    mesh = trimesh.load("meshes/deform.ply")
-    vertices = mesh.vertices
-    nv = vertices.shape[0]
-    print("number of vertices", nv)
-
-    one_ring = get_oriented_one_ring(mesh)
-
-    dt = 1.0
-    n_iter = 1
-    k = scalar_curvature(mesh, mean_curvature(vertices, one_ring["data"]))
-    k_min = k.min()
-    k_max = k.max()
-
-    for it in range(n_iter):
-        flow(vertices, -dt * k, one_ring)
-        k = scalar_curvature(mesh, mean_curvature(vertices, one_ring["data"]))
-
-    cm = to_cmap(vertex2face(mesh, k), k_min, k_max)
-    fig, ax = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection="3d"))
-
-    triangles = vertices[mesh.faces]
-    light = LightSource(90, 100)
-    pc = art3d.Poly3DCollection(
-        triangles,
-        facecolors=cm,
-        shade=True,
-        edgecolors=(1, 1, 1, 0.2),
-        alpha=1,
-        lightsource=light,
-    )
-    ax.add_collection(pc)
-    # plot_normals(ax, face_center, mesh.face_normals)
-    xlim = (vertices[:, 0].min(), vertices[:, 0].max())
-    ylim = (vertices[:, 1].min(), vertices[:, 1].max())
-    zlim = (vertices[:, 2].min(), vertices[:, 2].max())
-
-    ax.set_xlim(*xlim)
-    ax.set_ylim(*ylim)
-    ax.set_zlim(*zlim)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
-    ax.set_box_aspect([1, 1, 1])
-
-    fig.tight_layout(pad=0)
-    plt.show()
