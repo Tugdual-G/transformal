@@ -18,7 +18,7 @@ from transformal.transform import transform, scalar_curvature, get_oriented_one_
 
 
 def vertex_to_face(trimesh, vval):
-    """Interpolate vertex value to the face's center."""
+    """Interpolates vertex value to the face's center."""
     assert vval.shape[0] == trimesh.vertices.shape[0]
     return np.mean(vval[trimesh.faces], axis=1)
 
