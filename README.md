@@ -50,6 +50,7 @@ However, the iteration method seems to withstand this problem pretty well in com
 After applying the transform to the tangent vectors of the mesh (the edges of the mesh in practice),
 we solve the following equation for $x$, 
 $$\Delta x = \nabla \cdot e$$
+
 where, $x$ stands for the vertices position and $e$ for the tangents.
 
 Since we operate on closed surfaces, the system of equation is singular.
